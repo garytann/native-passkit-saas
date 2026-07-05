@@ -1,0 +1,10 @@
+.env
+.gocache/
+tmp/
+dist/
+*.pkpass
+
+# Keep real Apple credentials out of git.
+certs/*
+!certs/.gitkeep
+!certs/README.md
