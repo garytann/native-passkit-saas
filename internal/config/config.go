@@ -1,11 +1,14 @@
 package config
 
 import (
+	"bufio"
 	"os"
+	"strings"
 )
 
 type Config struct {
 	Port             string
+	DatabaseURL      string
 	PublicBaseURL    string
 	PassTypeID       string
 	TeamID           string
@@ -18,8 +21,11 @@ type Config struct {
 }
 
 func Load() Config {
+	_ = loadDotEnv(".env")
+
 	return Config{
 		Port:             env("PORT", "8080"),
+		DatabaseURL:      env("DATABASE_URL", ""),
 		PublicBaseURL:    env("PUBLIC_BASE_URL", "http://localhost:8080"),
 		PassTypeID:       env("APPLE_PASS_TYPE_ID", "pass.com.example.membership"),
 		TeamID:           env("APPLE_TEAM_ID", "ABCDE12345"),
@@ -38,4 +44,41 @@ func env(key string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func loadDotEnv(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		value = strings.Trim(value, `"'`)
+		if key == "" || os.Getenv(key) != "" {
+			continue
+		}
+
+		if err := os.Setenv(key, value); err != nil {
+			return err
+		}
+	}
+
+	return scanner.Err()
 }

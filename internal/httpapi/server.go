@@ -1,24 +1,32 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"native-ios-passkit-wip/internal/applepass"
 	"native-ios-passkit-wip/internal/config"
+	"native-ios-passkit-wip/internal/domain"
 )
 
 var errRouteNotFound = errors.New("pass route not found")
 
-type Server struct {
-	cfg       config.Config
-	generator applepass.Generator
+type MemberRepository interface {
+	Create(ctx context.Context, input domain.CreateStoreMemberInput) (domain.StoreMember, error)
 }
 
-func NewServer(cfg config.Config) Server {
+type Server struct {
+	cfg        config.Config
+	generator  applepass.Generator
+	memberRepo MemberRepository
+}
+
+func NewServer(cfg config.Config, memberRepo MemberRepository) Server {
 	return Server{
 		cfg: cfg,
 		generator: applepass.Generator{
@@ -27,12 +35,14 @@ func NewServer(cfg config.Config) Server {
 			WWDRCertPath:   cfg.WWDRCertPath,
 			OpenSSLBin:     cfg.OpenSSLBin,
 		},
+		memberRepo: memberRepo,
 	}
 }
 
 func (s Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", method("GET", s.handleHealth))
+	mux.HandleFunc("/customers/members/register", method("POST", s.handleRegisterMember))
 	mux.HandleFunc("/apple/passes/example", method("GET", s.handleExampleLink))
 	mux.HandleFunc("/apple/passes/", method("GET", s.handleApplePassRoutes))
 	return logRequests(withCORS(mux))
@@ -59,6 +69,70 @@ func (s Server) handleExampleLink(w http.ResponseWriter, r *http.Request) {
 		"passURL":    s.cfg.PublicBaseURL + "/apple/passes/member-1001.pkpass",
 		"previewURL": s.cfg.PublicBaseURL + "/apple/passes/member-1001/preview",
 	})
+}
+
+type registerMemberRequest struct {
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Merchant string `json:"merchant"`
+}
+
+func (s Server) handleRegisterMember(w http.ResponseWriter, r *http.Request) {
+	if s.memberRepo == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("database is not configured"))
+		return
+	}
+
+	var request registerMemberRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid JSON request body"))
+		return
+	}
+
+	request.Name = strings.TrimSpace(request.Name)
+	request.Email = strings.TrimSpace(strings.ToLower(request.Email))
+	request.Merchant = strings.TrimSpace(request.Merchant)
+	if err := validateRegisterMemberRequest(request); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	memberID, err := domain.NewReadableMemberID()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	member, err := s.memberRepo.Create(ctx, domain.CreateStoreMemberInput{
+		MemberID:      memberID,
+		CustomerName:  request.Name,
+		CustomerEmail: request.Email,
+		Merchant:      request.Merchant,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, member)
+}
+
+func validateRegisterMemberRequest(request registerMemberRequest) error {
+	switch {
+	case request.Name == "":
+		return errors.New("name is required")
+	case request.Email == "":
+		return errors.New("email is required")
+	case !strings.Contains(request.Email, "@"):
+		return errors.New("email must be valid")
+	case request.Merchant == "":
+		return errors.New("merchant is required")
+	default:
+		return nil
+	}
 }
 
 func (s Server) handleApplePass(w http.ResponseWriter, r *http.Request) {
@@ -157,7 +231,7 @@ func logRequests(next http.Handler) http.Handler {
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

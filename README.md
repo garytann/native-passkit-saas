@@ -31,11 +31,20 @@ The code can compile without those files, but `/apple/passes/{memberID}.pkpass` 
 
 ## Configure
 
-Copy `.env.example` values into your shell environment, or export only the values you need:
+Copy `.env.example` to `.env` for local development:
+
+```sh
+cp .env.example .env
+```
+
+The backend reads `.env` automatically. Real environment variables still take precedence, which is useful for deployment.
+
+You can also export values directly:
 
 ```sh
 export PORT=8080
 export PUBLIC_BASE_URL=http://localhost:8080
+export DATABASE_URL="postgres://postgres:postgres@localhost:5432/passkit_wip?sslmode=disable"
 export APPLE_PASS_TYPE_ID=pass.com.yourcompany.membership
 export APPLE_TEAM_ID=YOURTEAMID
 export APPLE_ORGANIZATION_NAME="Your Company"
@@ -45,6 +54,66 @@ export APPLE_WWDR_CERT_PATH=certs/wwdr.pem
 ```
 
 Put local PEM files in `certs/`. Do not commit real certificates or private keys.
+
+## Database
+
+This project uses Postgres for member registration. The Go database layer uses GORM with the Postgres driver to build and execute SQL.
+
+For local development, `go run ./cmd/server` will:
+
+1. Connect to the maintenance `postgres` database.
+2. Create the target database from `DATABASE_URL` if it does not exist.
+3. Connect to that target database.
+4. Run GORM auto-migration for `store_members`.
+
+You can still apply the SQL migration manually if you prefer explicit migration control:
+
+```sh
+psql "$DATABASE_URL" -f migrations/001_create_store_members.sql
+```
+
+The migration creates `store_members` with:
+
+- `member_id`
+- `creation_date`
+- `customer_name`
+- `customer_email`
+- `merchant`
+- `stamp_progress`
+- `status`
+
+`creation_date`, `stamp_progress`, and `status` are Postgres defaults. The API generates `member_id` as a readable support-friendly ID, for example `MBR-8K4J2QPA`, instead of exposing a long UUID to customers.
+
+## Member Registration API
+
+```http
+POST /customers/members/register
+Content-Type: application/json
+```
+
+Request:
+
+```json
+{
+  "name": "Taylor Example",
+  "email": "taylor@example.com",
+  "merchant": "Daily Brew"
+}
+```
+
+Response:
+
+```json
+{
+  "member_id": "MBR-8K4J2QPA",
+  "creation_date": "2026-07-06T10:00:00Z",
+  "customer_name": "Taylor Example",
+  "customer_email": "taylor@example.com",
+  "merchant": "Daily Brew",
+  "stamp_progress": 0,
+  "status": "active"
+}
+```
 
 ## Run
 
