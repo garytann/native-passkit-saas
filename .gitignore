@@ -4,6 +4,9 @@ tmp/
 dist/
 *.pkpass
 
+web/node_modules/
+web/dist/
+
 # Keep real Apple credentials out of git.
 certs/*
 !certs/.gitkeep

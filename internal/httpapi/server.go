@@ -35,7 +35,7 @@ func (s Server) Routes() http.Handler {
 	mux.HandleFunc("/healthz", method("GET", s.handleHealth))
 	mux.HandleFunc("/apple/passes/example", method("GET", s.handleExampleLink))
 	mux.HandleFunc("/apple/passes/", method("GET", s.handleApplePassRoutes))
-	return logRequests(mux)
+	return logRequests(withCORS(mux))
 }
 
 func (s Server) handleApplePassRoutes(w http.ResponseWriter, r *http.Request) {
@@ -150,6 +150,19 @@ func writeError(w http.ResponseWriter, status int, err error) {
 func logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("%s %s", r.Method, r.URL.Path)
+		next.ServeHTTP(w, r)
+	})
+}
+
+func withCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
 }

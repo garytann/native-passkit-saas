@@ -66,6 +66,32 @@ The preview endpoint does not need Apple certificates because it renders from th
 
 The actual `.pkpass` uses Apple's `PKBarcodeFormatQR` barcode field, so Wallet renders the QR natively. The HTML preview uses `/apple/passes/{memberID}/qr.png` to show a real scannable QR code for the same payload.
 
+## Admin Console
+
+The React admin console lives in `web/`.
+
+Start the Go API first:
+
+```sh
+go run ./cmd/server
+```
+
+Then start the frontend:
+
+```sh
+cd web
+npm install
+npm run dev -- --port 5173
+```
+
+Open:
+
+```text
+http://127.0.0.1:5173/
+```
+
+The current POC includes a sidebar, dashboard summary cards, placeholder activity panels, and a pass generator that calls `/apple/passes/example` and embeds the generated preview URL.
+
 ## Certificate Conversion Notes
 
 Apple usually gives you a `.cer` file, and Keychain can export a `.p12` containing the certificate/private key.
