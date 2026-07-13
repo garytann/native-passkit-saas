@@ -2,6 +2,9 @@ package domain
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -9,6 +12,8 @@ import (
 )
 
 const readableAlphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+
+var ErrStoreMemberNotFound = errors.New("store member not found")
 
 type StoreMember struct {
 	MemberID      string    `json:"member_id"`
@@ -43,4 +48,13 @@ func NewReadableMemberID() (string, error) {
 	}
 
 	return builder.String(), nil
+}
+
+func StableToken(value string, length int) string {
+	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(value))))
+	token := hex.EncodeToString(sum[:])
+	if length <= 0 || length > len(token) {
+		return token
+	}
+	return token[:length]
 }

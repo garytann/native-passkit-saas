@@ -515,6 +515,7 @@ tbody tr:last-child td {
   gap: 10px;
 }
 
+.form-stack,
 .input-row {
   display: grid;
   grid-template-columns: 1fr;
@@ -572,6 +573,41 @@ input:focus {
 .secondary-action {
   background: #f3f6fa;
   color: #2d3038;
+}
+
+.secondary-action.disabled {
+  opacity: .48;
+  pointer-events: none;
+}
+
+.registration-result {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 14px;
+  border: 1px solid #dbeee5;
+  border-radius: 8px;
+  background: #f4fbf7;
+}
+
+.registration-result span {
+  color: #6f7784;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.registration-result strong {
+  font-size: 22px;
+  font-weight: 700;
+  color: #245d52;
+}
+
+.registration-result em {
+  color: #626976;
+  font-size: 13px;
+  font-style: normal;
 }
 
 .bars {

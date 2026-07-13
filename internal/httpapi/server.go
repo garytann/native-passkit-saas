@@ -12,12 +12,17 @@ import (
 	"native-ios-passkit-wip/internal/applepass"
 	"native-ios-passkit-wip/internal/config"
 	"native-ios-passkit-wip/internal/domain"
+	"native-ios-passkit-wip/internal/httpapi/customer"
 )
 
 var errRouteNotFound = errors.New("pass route not found")
 
+const apiVersionPrefix = "/api/v1"
+const applePassesPathPrefix = apiVersionPrefix + "/apple/passes/"
+
 type MemberRepository interface {
-	Create(ctx context.Context, input domain.CreateStoreMemberInput) (domain.StoreMember, error)
+	customer.Repository
+	GetByID(ctx context.Context, memberID string) (domain.StoreMember, error)
 }
 
 type Server struct {
@@ -41,10 +46,12 @@ func NewServer(cfg config.Config, memberRepo MemberRepository) Server {
 
 func (s Server) Routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", method("GET", s.handleHealth))
-	mux.HandleFunc("/customers/members/register", method("POST", s.handleRegisterMember))
-	mux.HandleFunc("/apple/passes/example", method("GET", s.handleExampleLink))
-	mux.HandleFunc("/apple/passes/", method("GET", s.handleApplePassRoutes))
+	customerHandler := customer.NewHandler(s.memberRepo, s.publicAPIBaseURL())
+
+	mux.HandleFunc(apiVersionPrefix+"/healthz", method("GET", s.handleHealth))
+	mux.HandleFunc(apiVersionPrefix+"/customers/members/register", method("POST", customerHandler.RegisterMember))
+	mux.HandleFunc(apiVersionPrefix+"/apple/passes/example", method("GET", s.handleExampleLink))
+	mux.HandleFunc(applePassesPathPrefix, method("GET", s.handleApplePassRoutes))
 	return logRequests(withCORS(mux))
 }
 
@@ -66,73 +73,9 @@ func (s Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func (s Server) handleExampleLink(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
-		"passURL":    s.cfg.PublicBaseURL + "/apple/passes/member-1001.pkpass",
-		"previewURL": s.cfg.PublicBaseURL + "/apple/passes/member-1001/preview",
+		"passURL":    s.passURL("member-1001"),
+		"previewURL": s.previewURL("member-1001"),
 	})
-}
-
-type registerMemberRequest struct {
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Merchant string `json:"merchant"`
-}
-
-func (s Server) handleRegisterMember(w http.ResponseWriter, r *http.Request) {
-	if s.memberRepo == nil {
-		writeError(w, http.StatusServiceUnavailable, errors.New("database is not configured"))
-		return
-	}
-
-	var request registerMemberRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		writeError(w, http.StatusBadRequest, errors.New("invalid JSON request body"))
-		return
-	}
-
-	request.Name = strings.TrimSpace(request.Name)
-	request.Email = strings.TrimSpace(strings.ToLower(request.Email))
-	request.Merchant = strings.TrimSpace(request.Merchant)
-	if err := validateRegisterMemberRequest(request); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-
-	memberID, err := domain.NewReadableMemberID()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	member, err := s.memberRepo.Create(ctx, domain.CreateStoreMemberInput{
-		MemberID:      memberID,
-		CustomerName:  request.Name,
-		CustomerEmail: request.Email,
-		Merchant:      request.Merchant,
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	writeJSON(w, http.StatusCreated, member)
-}
-
-func validateRegisterMemberRequest(request registerMemberRequest) error {
-	switch {
-	case request.Name == "":
-		return errors.New("name is required")
-	case request.Email == "":
-		return errors.New("email is required")
-	case !strings.Contains(request.Email, "@"):
-		return errors.New("email must be valid")
-	case request.Merchant == "":
-		return errors.New("merchant is required")
-	default:
-		return nil
-	}
 }
 
 func (s Server) handleApplePass(w http.ResponseWriter, r *http.Request) {
@@ -146,7 +89,13 @@ func (s Server) handleApplePass(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pass := s.stampCardPass(sampleStampCardMember(memberID))
+	member, err := s.stampCardMemberForID(r.Context(), memberID)
+	if err != nil {
+		writeMemberLookupError(w, err)
+		return
+	}
+
+	pass := s.stampCardPass(member)
 
 	data, err := s.generator.Create(pass)
 	if err != nil {
@@ -162,12 +111,11 @@ func (s Server) handleApplePass(w http.ResponseWriter, r *http.Request) {
 }
 
 func memberIDFromPath(path string) (string, bool) {
-	const prefix = "/apple/passes/"
 	const suffix = ".pkpass"
-	if !hasRouteShape(path, prefix, suffix) {
+	if !hasRouteShape(path, applePassesPathPrefix, suffix) {
 		return "", false
 	}
-	return trimRouteValue(path, prefix, suffix), true
+	return trimRouteValue(path, applePassesPathPrefix, suffix), true
 }
 
 func hasRouteShape(path string, prefix string, suffix string) bool {
@@ -189,6 +137,58 @@ func sampleStampCardMember(memberID string) applepass.StampCardMember {
 		StampGoal:  10,
 		BarcodeID:  "stamp-card:" + memberID,
 	}
+}
+
+func (s Server) stampCardMemberForID(ctx context.Context, memberID string) (applepass.StampCardMember, error) {
+	if s.memberRepo == nil {
+		return sampleStampCardMember(memberID), nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	member, err := s.memberRepo.GetByID(ctx, memberID)
+	if err != nil {
+		return applepass.StampCardMember{}, err
+	}
+
+	return storeMemberToStampCard(member), nil
+}
+
+func storeMemberToStampCard(member domain.StoreMember) applepass.StampCardMember {
+	return applepass.StampCardMember{
+		ID:         member.MemberID,
+		FullName:   member.CustomerName,
+		BrandName:  member.Merchant,
+		RewardName: "Free Coffee",
+		StampCount: member.StampProgress,
+		StampGoal:  10,
+		BarcodeID:  "stamp-card:" + member.MemberID,
+	}
+}
+
+func (s Server) passURL(memberID string) string {
+	return s.publicAPIBaseURL() + "/apple/passes/" + memberID + ".pkpass"
+}
+
+func (s Server) previewURL(memberID string) string {
+	return s.publicAPIBaseURL() + "/apple/passes/" + memberID + "/preview"
+}
+
+func (s Server) qrCodeURL(memberID string) string {
+	return s.publicAPIBaseURL() + "/apple/passes/" + memberID + "/qr.png"
+}
+
+func (s Server) publicAPIBaseURL() string {
+	return strings.TrimRight(s.cfg.PublicBaseURL, "/") + apiVersionPrefix
+}
+
+func writeMemberLookupError(w http.ResponseWriter, err error) {
+	if errors.Is(err, domain.ErrStoreMemberNotFound) {
+		writeError(w, http.StatusNotFound, errors.New("member not found"))
+		return
+	}
+	writeError(w, http.StatusInternalServerError, err)
 }
 
 func (s Server) stampCardPass(member applepass.StampCardMember) applepass.Pass {

@@ -27,6 +27,9 @@ func main() {
 			log.Fatalf("get postgres pool: %v", err)
 		}
 		defer sqlDB.Close()
+		if err := repository.AutoMigrateMerchants(db); err != nil {
+			log.Fatalf("migrate merchants: %v", err)
+		}
 		if err := repository.AutoMigrateStoreMembers(db); err != nil {
 			log.Fatalf("migrate store members: %v", err)
 		}

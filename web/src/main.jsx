@@ -31,6 +31,7 @@ import {
 import "./styles.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
+const API_VERSION_PREFIX = "/api/v1";
 
 const navItems = [
   { label: "Dashboard", icon: Home, key: "dashboard" },
@@ -62,23 +63,32 @@ function App() {
   const [activeView, setActiveView] = useState("dashboard");
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [customerTab, setCustomerTab] = useState("members");
-  const [memberId, setMemberId] = useState("member-1001");
+  const [registration, setRegistration] = useState({
+    name: "Taylor Example",
+    email: "taylor@example.com",
+    merchant: "Saga Loyalty",
+  });
   const [passLinks, setPassLinks] = useState(null);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
 
   const previewUrl = useMemo(() => {
-    const safeId = encodeURIComponent(memberId.trim() || "member-1001");
-    return `${API_BASE}/apple/passes/${safeId}/preview`;
-  }, [memberId]);
+    const safeId = encodeURIComponent(passLinks?.member?.member_id ?? "member-1001");
+    return `${API_BASE}${API_VERSION_PREFIX}/apple/passes/${safeId}/preview`;
+  }, [passLinks]);
 
-  async function generateExamplePass() {
+  async function registerMember() {
     setStatus("loading");
     setError("");
     try {
-      const response = await fetch(`${API_BASE}/apple/passes/example`);
+      const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/customers/members/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(registration),
+      });
       if (!response.ok) {
-        throw new Error(`Example endpoint returned ${response.status}`);
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error ?? `Registration endpoint returned ${response.status}`);
       }
       const data = await response.json();
       setPassLinks(data);
@@ -109,13 +119,13 @@ function App() {
           <CustomersContent
             customerTab={customerTab}
             setCustomerTab={setCustomerTab}
-            memberId={memberId}
-            setMemberId={setMemberId}
+            registration={registration}
+            setRegistration={setRegistration}
             previewUrl={previewUrl}
             passLinks={passLinks}
             status={status}
             error={error}
-            onGenerate={generateExamplePass}
+            onRegister={registerMember}
           />
         ) : (
           <DashboardContent />
@@ -305,16 +315,21 @@ function MetricCard({ label, value, delta, icon: Icon }) {
   );
 }
 
-function PassGenerator({ memberId, setMemberId, previewUrl, passLinks, status, error, onGenerate }) {
-  const activePreviewUrl = passLinks?.previewURL ?? previewUrl;
-  const passUrl = passLinks?.passURL ?? `${API_BASE}/apple/passes/${encodeURIComponent(memberId || "member-1001")}.pkpass`;
+function PassGenerator({ registration, setRegistration, previewUrl, passLinks, status, error, onRegister }) {
+  const activePreviewUrl = passLinks?.preview_url ?? previewUrl;
+  const passUrl = passLinks?.pass_url ?? "";
+  const createdMember = passLinks?.member;
+
+  function updateRegistration(field, value) {
+    setRegistration((current) => ({ ...current, [field]: value }));
+  }
 
   return (
     <article className="generator-panel">
       <div className="panel-heading">
         <div>
           <span className="eyebrow">Apple Wallet</span>
-          <h2>Generate loyalty pass</h2>
+          <h2>Register customer</h2>
         </div>
         <button className="icon-button compact" aria-label="Pass actions" title="Pass actions">
           <Menu size={18} />
@@ -326,23 +341,42 @@ function PassGenerator({ memberId, setMemberId, previewUrl, passLinks, status, e
           className="generator-form"
           onSubmit={(event) => {
             event.preventDefault();
-            onGenerate();
+            onRegister();
           }}
         >
-          <label htmlFor="memberId">Consumer ID</label>
-          <div className="input-row">
+          <div className="form-stack">
+            <label htmlFor="customerName">Name</label>
             <input
-              id="memberId"
-              value={memberId}
-              onChange={(event) => setMemberId(event.target.value)}
-              spellCheck="false"
+              id="customerName"
+              value={registration.name}
+              onChange={(event) => updateRegistration("name", event.target.value)}
+            />
+            <label htmlFor="customerEmail">Email</label>
+            <input
+              id="customerEmail"
+              type="email"
+              value={registration.email}
+              onChange={(event) => updateRegistration("email", event.target.value)}
+            />
+            <label htmlFor="customerMerchant">Merchant</label>
+            <input
+              id="customerMerchant"
+              value={registration.merchant}
+              onChange={(event) => updateRegistration("merchant", event.target.value)}
             />
             <button className="primary-action" type="submit" disabled={status === "loading"}>
-              <QrCode size={18} />
-              {status === "loading" ? "Generating" : "Generate"}
+              <UserPlus size={18} />
+              {status === "loading" ? "Registering" : "Register & Generate Pass"}
             </button>
           </div>
           {error ? <p className="form-error">{error}</p> : null}
+          {createdMember ? (
+            <div className="registration-result">
+              <span>Member ID</span>
+              <strong>{createdMember.member_id}</strong>
+              <em>{createdMember.status} · {createdMember.stamp_progress} stamps</em>
+            </div>
+          ) : null}
         </form>
 
         <div className="pass-preview-shell">
@@ -355,7 +389,7 @@ function PassGenerator({ memberId, setMemberId, previewUrl, passLinks, status, e
           <WalletCards size={17} />
           Open Preview
         </a>
-        <a className="secondary-action" href={passUrl} target="_blank" rel="noreferrer">
+        <a className={`secondary-action ${passUrl ? "" : "disabled"}`} href={passUrl || undefined} target="_blank" rel="noreferrer">
           <Download size={17} />
           Download .pkpass
         </a>

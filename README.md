@@ -11,11 +11,11 @@ This project uses:
 
 ## Current Routes
 
-- `GET /healthz` - service health check.
-- `GET /apple/passes/example` - returns a sample pass URL.
-- `GET /apple/passes/{memberID}/preview` - renders an unsigned browser preview.
-- `GET /apple/passes/{memberID}/qr.png` - renders the preview QR code as a PNG.
-- `GET /apple/passes/{memberID}.pkpass` - generates and returns a signed Apple Wallet stamp card.
+- `GET /api/v1/healthz` - service health check.
+- `GET /api/v1/apple/passes/example` - returns a sample pass URL.
+- `GET /api/v1/apple/passes/{memberID}/preview` - renders an unsigned browser preview.
+- `GET /api/v1/apple/passes/{memberID}/qr.png` - renders the preview QR code as a PNG.
+- `GET /api/v1/apple/passes/{memberID}.pkpass` - generates and returns a signed Apple Wallet stamp card.
 
 ## Apple Credentials Required
 
@@ -27,7 +27,7 @@ To install a generated pass into Apple Wallet, you need Apple Developer Program 
 - Private key associated with the certificate request
 - Apple WWDR intermediate certificate
 
-The code can compile without those files, but `/apple/passes/{memberID}.pkpass` cannot produce an installable pass until the certs are present.
+The code can compile without those files, but `/api/v1/apple/passes/{memberID}.pkpass` cannot produce an installable pass until the certs are present.
 
 ## Configure
 
@@ -84,10 +84,20 @@ The migration creates `store_members` with:
 
 `creation_date`, `stamp_progress`, and `status` are Postgres defaults. The API generates `member_id` as a readable support-friendly ID, for example `MBR-8K4J2QPA`, instead of exposing a long UUID to customers.
 
+The second migration creates `merchants` for SaaS merchant onboarding:
+
+- `merchant_id`
+- `creation_date`
+- `merchant`
+- `merchant_email`
+- `status`
+
+`merchants.merchant` is unique and is referenced by `store_members.merchant`, so existing member registration can keep sending the merchant name while the platform maintains a dedicated merchant table.
+
 ## Member Registration API
 
 ```http
-POST /customers/members/register
+POST /api/v1/customers/members/register
 Content-Type: application/json
 ```
 
@@ -105,15 +115,22 @@ Response:
 
 ```json
 {
-  "member_id": "MBR-8K4J2QPA",
-  "creation_date": "2026-07-06T10:00:00Z",
-  "customer_name": "Taylor Example",
-  "customer_email": "taylor@example.com",
-  "merchant": "Daily Brew",
-  "stamp_progress": 0,
-  "status": "active"
+  "member": {
+    "member_id": "MBR-8K4J2QPA",
+    "creation_date": "2026-07-06T10:00:00Z",
+    "customer_name": "Taylor Example",
+    "customer_email": "taylor@example.com",
+    "merchant": "Daily Brew",
+    "stamp_progress": 0,
+    "status": "active"
+  },
+  "pass_url": "http://localhost:8080/api/v1/apple/passes/MBR-8K4J2QPA.pkpass",
+  "preview_url": "http://localhost:8080/api/v1/apple/passes/MBR-8K4J2QPA/preview",
+  "qr_code_url": "http://localhost:8080/api/v1/apple/passes/MBR-8K4J2QPA/qr.png"
 }
 ```
+
+The returned pass links render from the registered member record. `customer_name` is shown as the member name, `merchant` is shown as the pass brand, and `stamp_progress` controls the displayed stamps.
 
 ## Run
 
@@ -124,16 +141,16 @@ go run ./cmd/server
 Then test:
 
 ```sh
-curl http://localhost:8080/healthz
-open http://localhost:8080/apple/passes/member-1001/preview
-curl -OJ http://localhost:8080/apple/passes/member-1001.pkpass
+curl http://localhost:8080/api/v1/healthz
+open http://localhost:8080/api/v1/apple/passes/member-1001/preview
+curl -OJ http://localhost:8080/api/v1/apple/passes/member-1001.pkpass
 ```
 
 Without Apple certs, the pass endpoint returns a clear error explaining which credential is missing.
 
 The preview endpoint does not need Apple certificates because it renders from the same pass data as plain HTML. The current sample shows a Daily Brew loyalty card with 6 of 10 stamps filled. Treat it as a design/content preview only; Apple Wallet performs the final native rendering after a signed pass is opened on an iPhone.
 
-The actual `.pkpass` uses Apple's `PKBarcodeFormatQR` barcode field, so Wallet renders the QR natively. The HTML preview uses `/apple/passes/{memberID}/qr.png` to show a real scannable QR code for the same payload.
+The actual `.pkpass` uses Apple's `PKBarcodeFormatQR` barcode field, so Wallet renders the QR natively. The HTML preview uses `/api/v1/apple/passes/{memberID}/qr.png` to show a real scannable QR code for the same payload.
 
 ## Admin Console
 
@@ -159,7 +176,7 @@ Open:
 http://127.0.0.1:5173/
 ```
 
-The current POC includes a sidebar, dashboard summary cards, placeholder activity panels, and a pass generator that calls `/apple/passes/example` and embeds the generated preview URL.
+The current POC includes a sidebar, dashboard summary cards, placeholder activity panels, and a customer registration form that calls `/api/v1/customers/members/register` and embeds the generated Apple Wallet preview URL.
 
 ## Certificate Conversion Notes
 

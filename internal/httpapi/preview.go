@@ -32,7 +32,11 @@ func (s Server) handleApplePassPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	member := sampleStampCardMember(memberID)
+	member, err := s.stampCardMemberForID(r.Context(), memberID)
+	if err != nil {
+		writeMemberLookupError(w, err)
+		return
+	}
 	pass := s.stampCardPass(member)
 
 	barcode := applepass.Barcode{}
@@ -45,9 +49,9 @@ func (s Server) handleApplePassPreview(w http.ResponseWriter, r *http.Request) {
 		Member:     member,
 		Barcode:    barcode,
 		Stamps:     stampPreviews(member.StampCount, member.StampGoal),
-		PassURL:    s.cfg.PublicBaseURL + "/apple/passes/" + memberID + ".pkpass",
-		PreviewURL: s.cfg.PublicBaseURL + "/apple/passes/" + memberID + "/preview",
-		QRCodeURL:  s.cfg.PublicBaseURL + "/apple/passes/" + memberID + "/qr.png",
+		PassURL:    s.passURL(memberID),
+		PreviewURL: s.previewURL(memberID),
+		QRCodeURL:  s.qrCodeURL(memberID),
 	}
 
 	var out bytes.Buffer
@@ -69,7 +73,12 @@ func (s Server) handleApplePassQRCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	member := sampleStampCardMember(memberID)
+	member, err := s.stampCardMemberForID(r.Context(), memberID)
+	if err != nil {
+		writeMemberLookupError(w, err)
+		return
+	}
+
 	png, err := qrcode.Encode(member.BarcodeID, qrcode.Medium, 320)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -83,21 +92,19 @@ func (s Server) handleApplePassQRCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func memberIDFromPreviewPath(path string) (string, bool) {
-	const prefix = "/apple/passes/"
 	const suffix = "/preview"
-	if !hasRouteShape(path, prefix, suffix) {
+	if !hasRouteShape(path, applePassesPathPrefix, suffix) {
 		return "", false
 	}
-	return trimRouteValue(path, prefix, suffix), true
+	return trimRouteValue(path, applePassesPathPrefix, suffix), true
 }
 
 func memberIDFromQRCodePath(path string) (string, bool) {
-	const prefix = "/apple/passes/"
 	const suffix = "/qr.png"
-	if !hasRouteShape(path, prefix, suffix) {
+	if !hasRouteShape(path, applePassesPathPrefix, suffix) {
 		return "", false
 	}
-	return trimRouteValue(path, prefix, suffix), true
+	return trimRouteValue(path, applePassesPathPrefix, suffix), true
 }
 
 func stampPreviews(count int, goal int) []stampPreview {
