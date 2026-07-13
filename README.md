@@ -178,6 +178,20 @@ http://127.0.0.1:5173/
 
 The current POC includes a sidebar, dashboard summary cards, placeholder activity panels, and a customer registration form that calls `/api/v1/customers/members/register` and embeds the generated Apple Wallet preview URL.
 
+The customer-facing registration POC is available at:
+
+```text
+http://127.0.0.1:5173/members/register
+```
+
+It only asks for name and email, then submits the configured merchant name behind the scenes. Set `VITE_DEFAULT_MERCHANT` for the frontend if you want to change the merchant used by that page:
+
+```sh
+VITE_DEFAULT_MERCHANT="Saga Loyalty" npm run dev -- --port 5173
+```
+
+After registration, the page shows a direct `.pkpass` link for testing. In a later phase, that same response can be used to email the pass link instead.
+
 ## Certificate Conversion Notes
 
 Apple usually gives you a `.cer` file, and Keychain can export a `.p12` containing the certificate/private key.
