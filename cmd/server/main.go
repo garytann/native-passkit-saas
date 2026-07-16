@@ -15,6 +15,7 @@ func main() {
 	cfg := config.Load()
 
 	var memberRepo httpapi.MemberRepository
+	var merchantRepo httpapi.MerchantRepository
 	if cfg.DatabaseURL == "" {
 		log.Printf("DATABASE_URL is not set; member registration endpoint will be unavailable")
 	} else {
@@ -34,9 +35,10 @@ func main() {
 			log.Fatalf("migrate store members: %v", err)
 		}
 		memberRepo = repository.NewStoreMemberRepository(db)
+		merchantRepo = repository.NewMerchantRepository(db)
 	}
 
-	server := httpapi.NewServer(cfg, memberRepo)
+	server := httpapi.NewServer(cfg, memberRepo, merchantRepo)
 
 	addr := ":" + cfg.Port
 	log.Printf("native iOS PassKit backend listening on http://localhost%s", addr)

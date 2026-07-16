@@ -33,16 +33,24 @@ type CreateStoreMemberInput struct {
 }
 
 func NewReadableMemberID() (string, error) {
+	return newReadableID("MBR-")
+}
+
+func NewReadableMerchantID() (string, error) {
+	return newReadableID("MCH-")
+}
+
+func newReadableID(prefix string) (string, error) {
 	const length = 8
 	var builder strings.Builder
-	builder.Grow(len("MBR-") + length)
-	builder.WriteString("MBR-")
+	builder.Grow(len(prefix) + length)
+	builder.WriteString(prefix)
 
 	max := big.NewInt(int64(len(readableAlphabet)))
 	for i := 0; i < length; i++ {
 		value, err := rand.Int(rand.Reader, max)
 		if err != nil {
-			return "", fmt.Errorf("generate member id: %w", err)
+			return "", fmt.Errorf("generate readable id: %w", err)
 		}
 		builder.WriteByte(readableAlphabet[value.Int64()])
 	}

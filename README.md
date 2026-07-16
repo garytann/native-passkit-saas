@@ -11,11 +11,37 @@ This project uses:
 
 ## Current Routes
 
+Routes are mounted through a single API version group in `internal/httpapi/routes.go`. The current public API prefix is:
+
+```text
+/api/v1
+```
+
 - `GET /api/v1/healthz` - service health check.
+- `POST /api/v1/merchants/register` - registers a SaaS merchant account.
 - `GET /api/v1/apple/passes/example` - returns a sample pass URL.
 - `GET /api/v1/apple/passes/{memberID}/preview` - renders an unsigned browser preview.
 - `GET /api/v1/apple/passes/{memberID}/qr.png` - renders the preview QR code as a PNG.
 - `GET /api/v1/apple/passes/{memberID}.pkpass` - generates and returns a signed Apple Wallet stamp card.
+
+## Backend Architecture
+
+The backend follows a small controller-service-repository shape while keeping Go packages under `internal`, as recommended for server implementations that are not intended to expose reusable public packages.
+
+- `cmd/server` - binary entry point and dependency wiring.
+- `internal/httpapi` - HTTP server assembly, middleware, and versioned route grouping.
+- `internal/controller` - HTTP controllers for request parsing and response writing.
+- `internal/service` - business logic for member registration and pass generation.
+- `internal/repository` - GORM/Postgres persistence.
+- `internal/domain` - core domain models and domain-level helpers.
+
+When adding new API features, prefer this flow:
+
+```text
+controller -> service -> repository
+```
+
+Controllers should parse requests and write HTTP responses. Services should validate business inputs, compose domain behavior, and call repositories. Repositories should stay focused on database reads/writes.
 
 ## Apple Credentials Required
 
@@ -88,11 +114,53 @@ The second migration creates `merchants` for SaaS merchant onboarding:
 
 - `merchant_id`
 - `creation_date`
+- `first_name`
+- `last_name`
 - `merchant`
 - `merchant_email`
+- `password_hash`
 - `status`
+- `payment_status`
 
 `merchants.merchant` is unique and is referenced by `store_members.merchant`, so existing member registration can keep sending the merchant name while the platform maintains a dedicated merchant table.
+
+Merchant registration accepts a plain `password` in the API request, hashes it with bcrypt in the service layer, and stores only `password_hash`. New merchants start with `payment_status` set to `inactive`; payment activation can be added later.
+
+## Merchant Registration API
+
+```http
+POST /api/v1/merchants/register
+Content-Type: application/json
+```
+
+Request:
+
+```json
+{
+  "first_name": "Gary",
+  "last_name": "Lee",
+  "company": "Daily Brew",
+  "merchant_email": "owner@dailybrew.example",
+  "password": "password123"
+}
+```
+
+Response:
+
+```json
+{
+  "merchant": {
+    "merchant_id": "MCH-8K4J2QPA",
+    "creation_date": "2026-07-16T10:00:00Z",
+    "first_name": "Gary",
+    "last_name": "Lee",
+    "merchant": "Daily Brew",
+    "merchant_email": "owner@dailybrew.example",
+    "status": "active",
+    "payment_status": "inactive"
+  }
+}
+```
 
 ## Member Registration API
 

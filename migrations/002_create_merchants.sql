@@ -1,9 +1,13 @@
 CREATE TABLE IF NOT EXISTS merchants (
     merchant_id TEXT PRIMARY KEY,
     creation_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    first_name TEXT NOT NULL DEFAULT '',
+    last_name TEXT NOT NULL DEFAULT '',
     merchant TEXT NOT NULL UNIQUE,
-    merchant_email TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive'))
+    merchant_email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+    payment_status TEXT NOT NULL DEFAULT 'inactive' CHECK (payment_status IN ('active', 'inactive'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_merchants_merchant_email

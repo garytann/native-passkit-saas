@@ -10,7 +10,7 @@ import (
 )
 
 func TestRoutesUseAPIV1Prefix(t *testing.T) {
-	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080"}, nil)
+	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080"}, nil, nil)
 	routes := server.Routes()
 
 	response := httptest.NewRecorder()
@@ -29,7 +29,7 @@ func TestRoutesUseAPIV1Prefix(t *testing.T) {
 }
 
 func TestPassExampleReturnsVersionedURLs(t *testing.T) {
-	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080"}, nil)
+	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080"}, nil, nil)
 	routes := server.Routes()
 
 	response := httptest.NewRecorder()
@@ -49,7 +49,7 @@ func TestPassExampleReturnsVersionedURLs(t *testing.T) {
 }
 
 func TestCustomerRegistrationRouteIsVersioned(t *testing.T) {
-	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080"}, nil)
+	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080"}, nil, nil)
 	routes := server.Routes()
 
 	response := httptest.NewRecorder()
@@ -62,5 +62,22 @@ func TestCustomerRegistrationRouteIsVersioned(t *testing.T) {
 	routes.ServeHTTP(response, request)
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected versioned customer registration route to return 503 without db, got %d", response.Code)
+	}
+}
+
+func TestMerchantRegistrationRouteIsVersioned(t *testing.T) {
+	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080"}, nil, nil)
+	routes := server.Routes()
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/merchants/register",
+		strings.NewReader(`{"first_name":"Gary","last_name":"Lee","company":"Saga Loyalty","merchant_email":"merchant@example.com","password":"password123"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	routes.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected versioned merchant registration route to return 503 without db, got %d", response.Code)
 	}
 }

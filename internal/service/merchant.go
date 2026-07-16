@@ -1,0 +1,98 @@
+package service
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"golang.org/x/crypto/bcrypt"
+
+	"native-ios-passkit-wip/internal/domain"
+)
+
+type MerchantRepository interface {
+	Create(ctx context.Context, input domain.CreateMerchantInput) (domain.Merchant, error)
+}
+
+type RegisterMerchantInput struct {
+	FirstName     string
+	LastName      string
+	Company       string
+	MerchantEmail string
+	Password      string
+}
+
+type MerchantService struct {
+	repo    MerchantRepository
+	timeout time.Duration
+}
+
+func NewMerchantService(repo MerchantRepository) MerchantService {
+	return MerchantService{
+		repo:    repo,
+		timeout: 5 * time.Second,
+	}
+}
+
+func (s MerchantService) RegisterMerchant(ctx context.Context, input RegisterMerchantInput) (domain.Merchant, error) {
+	if s.repo == nil {
+		return domain.Merchant{}, ErrRepositoryUnavailable
+	}
+
+	input.FirstName = strings.TrimSpace(input.FirstName)
+	input.LastName = strings.TrimSpace(input.LastName)
+	input.Company = strings.TrimSpace(input.Company)
+	input.MerchantEmail = strings.TrimSpace(strings.ToLower(input.MerchantEmail))
+	if err := validateRegisterMerchantInput(input); err != nil {
+		return domain.Merchant{}, err
+	}
+
+	merchantID, err := domain.NewReadableMerchantID()
+	if err != nil {
+		return domain.Merchant{}, err
+	}
+
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return domain.Merchant{}, fmt.Errorf("hash merchant password: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	merchant, err := s.repo.Create(ctx, domain.CreateMerchantInput{
+		MerchantID:    merchantID,
+		FirstName:     input.FirstName,
+		LastName:      input.LastName,
+		Company:       input.Company,
+		MerchantEmail: input.MerchantEmail,
+		PasswordHash:  string(passwordHash),
+	})
+	if err != nil {
+		return domain.Merchant{}, fmt.Errorf("register merchant: %w", err)
+	}
+
+	return merchant, nil
+}
+
+func validateRegisterMerchantInput(input RegisterMerchantInput) error {
+	switch {
+	case input.FirstName == "":
+		return ValidationError{Message: "first_name is required"}
+	case input.LastName == "":
+		return ValidationError{Message: "last_name is required"}
+	case input.Company == "":
+		return ValidationError{Message: "company is required"}
+	case input.MerchantEmail == "":
+		return ValidationError{Message: "merchant_email is required"}
+	case !strings.Contains(input.MerchantEmail, "@"):
+		return ValidationError{Message: "merchant_email must be valid"}
+	case input.Password == "":
+		return ValidationError{Message: "password is required"}
+	case len(input.Password) < 8:
+		return ValidationError{Message: "password must be at least 8 characters"}
+	default:
+		return nil
+	}
+}
