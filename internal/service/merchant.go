@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 type MerchantRepository interface {
 	Create(ctx context.Context, input domain.CreateMerchantInput) (domain.Merchant, error)
 	GetByEmail(ctx context.Context, email string) (domain.MerchantCredentials, error)
+	GetBySlug(ctx context.Context, slug string) (domain.Merchant, error)
 }
 
 type RegisterMerchantInput struct {
@@ -23,6 +25,8 @@ type RegisterMerchantInput struct {
 	MerchantEmail string
 	Password      string
 }
+
+var slugSeparators = regexp.MustCompile(`[^a-z0-9]+`)
 
 type MerchantService struct {
 	repo         MerchantRepository
@@ -79,11 +83,33 @@ func (s MerchantService) RegisterMerchant(ctx context.Context, input RegisterMer
 		FirstName:     input.FirstName,
 		LastName:      input.LastName,
 		Company:       input.Company,
+		MerchantSlug:  MerchantSlug(input.Company),
 		MerchantEmail: input.MerchantEmail,
 		PasswordHash:  string(passwordHash),
 	})
 	if err != nil {
 		return domain.Merchant{}, fmt.Errorf("register merchant: %w", err)
+	}
+
+	return merchant, nil
+}
+
+func (s MerchantService) MerchantBySlug(ctx context.Context, slug string) (domain.Merchant, error) {
+	if s.repo == nil {
+		return domain.Merchant{}, ErrRepositoryUnavailable
+	}
+
+	slug = strings.TrimSpace(strings.ToLower(slug))
+	if slug == "" {
+		return domain.Merchant{}, ValidationError{Message: "merchant slug is required"}
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	merchant, err := s.repo.GetBySlug(ctx, slug)
+	if err != nil {
+		return domain.Merchant{}, err
 	}
 
 	return merchant, nil
@@ -119,6 +145,14 @@ func (s MerchantService) LoginMerchant(ctx context.Context, input LoginMerchantI
 		Merchant: merchant.PublicMerchant(),
 		Token:    token,
 	}, nil
+}
+
+func MerchantSlug(company string) string {
+	slug := strings.Trim(slugSeparators.ReplaceAllString(strings.ToLower(strings.TrimSpace(company)), "-"), "-")
+	if slug == "" {
+		return "merchant"
+	}
+	return slug
 }
 
 func validateRegisterMerchantInput(input RegisterMerchantInput) error {

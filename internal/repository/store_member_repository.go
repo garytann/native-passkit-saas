@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -11,6 +12,8 @@ import (
 	"gorm.io/gorm/clause"
 	"native-ios-passkit-wip/internal/domain"
 )
+
+var slugSeparators = regexp.MustCompile(`[^a-z0-9]+`)
 
 type StoreMemberRepository struct {
 	db *gorm.DB
@@ -49,10 +52,11 @@ func AutoMigrateStoreMembers(db *gorm.DB) error {
 
 func backfillMerchantsFromStoreMembers(db *gorm.DB) error {
 	if err := db.Exec(`
-		INSERT INTO merchants (merchant_id, merchant, merchant_email)
+		INSERT INTO merchants (merchant_id, merchant, merchant_slug, merchant_email)
 		SELECT
 			'MCH-' || UPPER(SUBSTRING(MD5(merchant) FROM 1 FOR 8)),
 			merchant,
+			LOWER(REGEXP_REPLACE(TRIM(BOTH '-' FROM REGEXP_REPLACE(merchant, '[^a-zA-Z0-9]+', '-', 'g')), '-+', '-', 'g')),
 			'merchant-' || LOWER(SUBSTRING(MD5(merchant) FROM 1 FOR 10)) || '@example.com'
 		FROM (
 			SELECT DISTINCT merchant
@@ -136,6 +140,7 @@ func (r StoreMemberRepository) ensureMerchant(ctx context.Context, merchantName 
 	merchant := merchantModel{
 		MerchantID:    deterministicMerchantID(merchantName),
 		Merchant:      merchantName,
+		MerchantSlug:  merchantSlug(merchantName),
 		MerchantEmail: placeholderMerchantEmail(merchantName),
 	}
 
@@ -158,6 +163,14 @@ func deterministicMerchantID(merchantName string) string {
 func placeholderMerchantEmail(merchantName string) string {
 	token := strings.ToLower(domain.StableToken(merchantName, 10))
 	return "merchant-" + token + "@example.com"
+}
+
+func merchantSlug(merchantName string) string {
+	slug := strings.Trim(slugSeparators.ReplaceAllString(strings.ToLower(strings.TrimSpace(merchantName)), "-"), "-")
+	if slug == "" {
+		return "merchant"
+	}
+	return slug
 }
 
 func (r StoreMemberRepository) GetByID(ctx context.Context, memberID string) (domain.StoreMember, error) {

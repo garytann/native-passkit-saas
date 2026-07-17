@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { API_BASE, API_VERSION_PREFIX, DEFAULT_MERCHANT } from "../config/api";
 
-export default function MembersRegisterPage() {
+export default function MembersRegisterPage({ merchantSlug = "" }) {
   const [registration, setRegistration] = useState({
     name: "",
     email: "",
@@ -17,6 +17,7 @@ export default function MembersRegisterPage() {
   const [error, setError] = useState("");
 
   const createdMember = passLinks?.member;
+  const merchantLabel = merchantSlug ? merchantNameFromSlug(merchantSlug) : DEFAULT_MERCHANT;
 
   function updateRegistration(field, value) {
     setRegistration((current) => ({ ...current, [field]: value }));
@@ -28,14 +29,10 @@ export default function MembersRegisterPage() {
     setError("");
 
     try {
-      const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/customers/members/register`, {
+      const response = await fetch(registrationEndpoint(merchantSlug), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: registration.name,
-          email: registration.email,
-          merchant: DEFAULT_MERCHANT,
-        }),
+        body: JSON.stringify(registrationPayload(registration, merchantSlug)),
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
@@ -53,11 +50,11 @@ export default function MembersRegisterPage() {
   return (
     <div className="public-page member-register-page">
       <header className="public-header">
-        <div className="public-brand" aria-label={DEFAULT_MERCHANT}>
+        <div className="public-brand" aria-label={merchantLabel}>
           <span className="auth-mark small">
             <Sparkles size={20} />
           </span>
-          <strong>{DEFAULT_MERCHANT}</strong>
+          <strong>{merchantLabel}</strong>
         </div>
       </header>
 
@@ -125,6 +122,35 @@ export default function MembersRegisterPage() {
       </main>
     </div>
   );
+}
+
+function registrationEndpoint(merchantSlug) {
+  if (merchantSlug) {
+    return `${API_BASE}${API_VERSION_PREFIX}/public/merchants/${encodeURIComponent(merchantSlug)}/members/register`;
+  }
+  return `${API_BASE}${API_VERSION_PREFIX}/customers/members/register`;
+}
+
+function registrationPayload(registration, merchantSlug) {
+  if (merchantSlug) {
+    return {
+      name: registration.name,
+      email: registration.email,
+    };
+  }
+  return {
+    name: registration.name,
+    email: registration.email,
+    merchant: DEFAULT_MERCHANT,
+  };
+}
+
+function merchantNameFromSlug(slug) {
+  return slug
+    .split("-")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 function SuccessPanel({ passLinks }) {

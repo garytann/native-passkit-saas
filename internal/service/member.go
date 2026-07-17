@@ -30,9 +30,14 @@ type RegisterMemberResult struct {
 }
 
 type MemberService struct {
-	repo    MemberRepository
-	linker  PassLinker
-	timeout time.Duration
+	repo      MemberRepository
+	merchants MerchantLookupRepository
+	linker    PassLinker
+	timeout   time.Duration
+}
+
+type MerchantLookupRepository interface {
+	GetBySlug(ctx context.Context, slug string) (domain.Merchant, error)
 }
 
 type PassLinker interface {
@@ -46,6 +51,15 @@ func NewMemberService(repo MemberRepository, linker PassLinker) MemberService {
 		repo:    repo,
 		linker:  linker,
 		timeout: 5 * time.Second,
+	}
+}
+
+func NewMemberServiceWithMerchants(repo MemberRepository, merchants MerchantLookupRepository, linker PassLinker) MemberService {
+	return MemberService{
+		repo:      repo,
+		merchants: merchants,
+		linker:    linker,
+		timeout:   5 * time.Second,
 	}
 }
 
@@ -109,6 +123,28 @@ func (s MemberService) ListMembersForMerchant(ctx context.Context, merchant stri
 	}
 
 	return members, nil
+}
+
+func (s MemberService) RegisterMemberByMerchantSlug(ctx context.Context, merchantSlug string, input RegisterMemberInput) (RegisterMemberResult, error) {
+	if s.merchants == nil {
+		return RegisterMemberResult{}, ErrRepositoryUnavailable
+	}
+
+	merchantSlug = strings.TrimSpace(strings.ToLower(merchantSlug))
+	if merchantSlug == "" {
+		return RegisterMemberResult{}, ValidationError{Message: "merchant slug is required"}
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	merchant, err := s.merchants.GetBySlug(ctx, merchantSlug)
+	if err != nil {
+		return RegisterMemberResult{}, err
+	}
+
+	input.Merchant = merchant.Merchant
+	return s.RegisterMember(ctx, input)
 }
 
 func validateRegisterMemberInput(input RegisterMemberInput) error {

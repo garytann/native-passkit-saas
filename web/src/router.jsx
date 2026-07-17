@@ -9,6 +9,11 @@ const MERCHANT_REGISTRATION_PATH = "/merchants/register";
 const DASHBOARD_PATH = "/dashboard";
 
 export default function AppRouter() {
+  const merchantJoinSlug = merchantJoinSlugFromPath(window.location.pathname);
+  if (merchantJoinSlug) {
+    return <MembersRegisterPage merchantSlug={merchantJoinSlug} />;
+  }
+
   if (isPath(window.location.pathname, "/") || isPath(window.location.pathname, "/login")) {
     return <LoginPage />;
   }
@@ -31,4 +36,9 @@ export default function AppRouter() {
 function isPath(pathname, targetPath) {
   const normalized = pathname.replace(/\/$/, "") || "/";
   return normalized === targetPath;
+}
+
+function merchantJoinSlugFromPath(pathname) {
+  const match = pathname.replace(/\/$/, "").match(/^\/m\/([^/]+)\/join$/);
+  return match?.[1] ? decodeURIComponent(match[1]) : "";
 }

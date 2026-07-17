@@ -21,6 +21,7 @@ type merchantModel struct {
 	FirstName     string    `gorm:"column:first_name;default:''"`
 	LastName      string    `gorm:"column:last_name;default:''"`
 	Merchant      string    `gorm:"column:merchant;uniqueIndex;not null"`
+	MerchantSlug  string    `gorm:"column:merchant_slug;uniqueIndex"`
 	MerchantEmail string    `gorm:"column:merchant_email;uniqueIndex;not null"`
 	PasswordHash  string    `gorm:"column:password_hash;default:'';not null"`
 	Status        string    `gorm:"column:status;default:active"`
@@ -48,6 +49,7 @@ func (r MerchantRepository) Create(ctx context.Context, input domain.CreateMerch
 		FirstName:     input.FirstName,
 		LastName:      input.LastName,
 		Merchant:      input.Company,
+		MerchantSlug:  input.MerchantSlug,
 		MerchantEmail: input.MerchantEmail,
 		PasswordHash:  input.PasswordHash,
 		PaymentStatus: "inactive",
@@ -66,6 +68,7 @@ func (r MerchantRepository) Create(ctx context.Context, input domain.CreateMerch
 		FirstName:     merchant.FirstName,
 		LastName:      merchant.LastName,
 		Merchant:      merchant.Merchant,
+		MerchantSlug:  merchant.MerchantSlug,
 		MerchantEmail: merchant.MerchantEmail,
 		Status:        merchant.Status,
 		PaymentStatus: merchant.PaymentStatus,
@@ -86,8 +89,31 @@ func (r MerchantRepository) GetByEmail(ctx context.Context, email string) (domai
 		FirstName:     merchant.FirstName,
 		LastName:      merchant.LastName,
 		Merchant:      merchant.Merchant,
+		MerchantSlug:  merchant.MerchantSlug,
 		MerchantEmail: merchant.MerchantEmail,
 		PasswordHash:  merchant.PasswordHash,
+		Status:        merchant.Status,
+		PaymentStatus: merchant.PaymentStatus,
+	}, nil
+}
+
+func (r MerchantRepository) GetBySlug(ctx context.Context, slug string) (domain.Merchant, error) {
+	var merchant merchantModel
+	if err := r.db.WithContext(ctx).First(&merchant, "merchant_slug = ?", slug).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.Merchant{}, domain.ErrMerchantNotFound
+		}
+		return domain.Merchant{}, fmt.Errorf("get merchant by slug: %w", err)
+	}
+
+	return domain.Merchant{
+		MerchantID:    merchant.MerchantID,
+		CreationDate:  merchant.CreationDate,
+		FirstName:     merchant.FirstName,
+		LastName:      merchant.LastName,
+		Merchant:      merchant.Merchant,
+		MerchantSlug:  merchant.MerchantSlug,
+		MerchantEmail: merchant.MerchantEmail,
 		Status:        merchant.Status,
 		PaymentStatus: merchant.PaymentStatus,
 	}, nil

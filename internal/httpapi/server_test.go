@@ -110,3 +110,20 @@ func TestMembersListRequiresMerchantToken(t *testing.T) {
 		t.Fatalf("expected members list route to require auth token, got %d", response.Code)
 	}
 }
+
+func TestPublicMerchantMemberRegistrationRouteIsVersioned(t *testing.T) {
+	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080"}, nil, nil)
+	routes := server.Routes()
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/public/merchants/daily-brew/members/register",
+		strings.NewReader(`{"name":"Taylor","email":"taylor@example.com"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	routes.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected public merchant member registration route to return 503 without db, got %d", response.Code)
+	}
+}

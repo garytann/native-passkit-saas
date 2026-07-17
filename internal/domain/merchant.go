@@ -7,6 +7,7 @@ import (
 
 var ErrMerchantAlreadyExists = errors.New("merchant already exists")
 var ErrInvalidMerchantCredentials = errors.New("invalid merchant credentials")
+var ErrMerchantNotFound = errors.New("merchant not found")
 
 type Merchant struct {
 	MerchantID    string    `json:"merchant_id"`
@@ -14,6 +15,7 @@ type Merchant struct {
 	FirstName     string    `json:"first_name"`
 	LastName      string    `json:"last_name"`
 	Merchant      string    `json:"merchant"`
+	MerchantSlug  string    `json:"merchant_slug"`
 	MerchantEmail string    `json:"merchant_email"`
 	Status        string    `json:"status"`
 	PaymentStatus string    `json:"payment_status"`
@@ -24,6 +26,7 @@ type CreateMerchantInput struct {
 	FirstName     string
 	LastName      string
 	Company       string
+	MerchantSlug  string
 	MerchantEmail string
 	PasswordHash  string
 }
@@ -33,6 +36,7 @@ type MerchantCredentials struct {
 	FirstName     string
 	LastName      string
 	Merchant      string
+	MerchantSlug  string
 	MerchantEmail string
 	PasswordHash  string
 	Status        string
@@ -45,6 +49,7 @@ func (m MerchantCredentials) PublicMerchant() Merchant {
 		FirstName:     m.FirstName,
 		LastName:      m.LastName,
 		Merchant:      m.Merchant,
+		MerchantSlug:  m.MerchantSlug,
 		MerchantEmail: m.MerchantEmail,
 		Status:        m.Status,
 		PaymentStatus: m.PaymentStatus,

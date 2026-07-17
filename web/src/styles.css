@@ -601,6 +601,30 @@ input:focus {
   background: #f4fbf7;
 }
 
+.merchant-link-box {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid #dbeee5;
+  border-radius: 8px;
+  background: #f4fbf7;
+}
+
+.merchant-link-box span {
+  color: #6f7784;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.merchant-link-box a {
+  color: #245d52;
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
 .registration-result span {
   color: #6f7784;
   font-size: 12px;

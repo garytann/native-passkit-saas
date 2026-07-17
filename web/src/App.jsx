@@ -189,6 +189,7 @@ export default function App() {
             members={members}
             membersStatus={membersStatus}
             membersError={membersError}
+            session={session}
             onRegister={registerMember}
           />
         ) : (
@@ -391,10 +392,11 @@ function MetricCard({ label, value, delta, icon: Icon }) {
   );
 }
 
-function PassGenerator({ registration, setRegistration, previewUrl, passLinks, status, error, onRegister }) {
+function PassGenerator({ registration, setRegistration, previewUrl, passLinks, status, error, session, onRegister }) {
   const activePreviewUrl = passLinks?.preview_url ?? previewUrl;
   const passUrl = passLinks?.pass_url ?? "";
   const createdMember = passLinks?.member;
+  const signupLink = merchantSignupLink(session?.merchant);
 
   function updateRegistration(field, value) {
     setRegistration((current) => ({ ...current, [field]: value }));
@@ -420,6 +422,10 @@ function PassGenerator({ registration, setRegistration, previewUrl, passLinks, s
             onRegister();
           }}
         >
+          <div className="merchant-link-box">
+            <span>Customer signup link</span>
+            <a href={signupLink} target="_blank" rel="noreferrer">{signupLink}</a>
+          </div>
           <div className="form-stack">
             <label htmlFor="customerName">Name</label>
             <input
@@ -473,6 +479,19 @@ function PassGenerator({ registration, setRegistration, previewUrl, passLinks, s
       </div>
     </article>
   );
+}
+
+function merchantSignupLink(merchant) {
+  const slug = merchant?.merchant_slug || slugify(merchant?.merchant || DEFAULT_MERCHANT);
+  return `${window.location.origin}/m/${encodeURIComponent(slug)}/join`;
+}
+
+function slugify(value) {
+  return String(value ?? "merchant")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "merchant";
 }
 
 function MembersTable({ members, status, error }) {

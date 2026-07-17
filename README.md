@@ -21,6 +21,7 @@ Routes are mounted through a single API version group in `internal/httpapi/route
 - `POST /api/v1/merchants/register` - registers a SaaS merchant account.
 - `POST /api/v1/merchants/login` - validates merchant email/password and returns a merchant token.
 - `GET /api/v1/customers/members` - returns members scoped to the authenticated merchant.
+- `POST /api/v1/public/merchants/{merchantSlug}/members/register` - registers a customer from a merchant-owned public signup link.
 - `GET /api/v1/apple/passes/example` - returns a sample pass URL.
 - `GET /api/v1/apple/passes/{memberID}/preview` - renders an unsigned browser preview.
 - `GET /api/v1/apple/passes/{memberID}/qr.png` - renders the preview QR code as a PNG.
@@ -120,6 +121,7 @@ The second migration creates `merchants` for SaaS merchant onboarding:
 - `first_name`
 - `last_name`
 - `merchant`
+- `merchant_slug`
 - `merchant_email`
 - `password_hash`
 - `status`
@@ -158,6 +160,7 @@ Response:
     "first_name": "Gary",
     "last_name": "Lee",
     "merchant": "Daily Brew",
+    "merchant_slug": "daily-brew",
     "merchant_email": "owner@dailybrew.example",
     "status": "active",
     "payment_status": "inactive"
@@ -202,6 +205,30 @@ Use the token to load merchant-scoped members:
 GET /api/v1/customers/members
 Authorization: Bearer signed-merchant-token
 ```
+
+Each merchant also receives a public signup link based on `merchant_slug`:
+
+```text
+http://127.0.0.1:5173/m/daily-brew/join
+```
+
+That page asks customers only for name and email. It calls:
+
+```http
+POST /api/v1/public/merchants/daily-brew/members/register
+Content-Type: application/json
+```
+
+Request:
+
+```json
+{
+  "name": "Taylor Example",
+  "email": "taylor@example.com"
+}
+```
+
+The backend resolves `daily-brew` to the merchant record and creates the member under that merchant.
 
 ## Member Registration API
 

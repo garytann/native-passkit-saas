@@ -31,14 +31,16 @@ func (HealthController) Check(w http.ResponseWriter, _ *http.Request) {
 }
 
 type CustomerController struct {
-	members service.MemberService
-	tokens  service.TokenManager
+	members          service.MemberService
+	tokens           service.TokenManager
+	publicPathPrefix string
 }
 
-func NewCustomerController(members service.MemberService, tokens service.TokenManager) CustomerController {
+func NewCustomerController(members service.MemberService, tokens service.TokenManager, publicPathPrefix string) CustomerController {
 	return CustomerController{
-		members: members,
-		tokens:  tokens,
+		members:          members,
+		tokens:           tokens,
+		publicPathPrefix: publicPathPrefix,
 	}
 }
 
@@ -46,6 +48,11 @@ type registerMemberRequest struct {
 	Name     string `json:"name"`
 	Email    string `json:"email"`
 	Merchant string `json:"merchant"`
+}
+
+type publicRegisterMemberRequest struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
 }
 
 type registerMemberResponse struct {
@@ -104,6 +111,44 @@ func (c CustomerController) RegisterMember(w http.ResponseWriter, r *http.Reques
 		PreviewURL: result.PreviewURL,
 		QRCodeURL:  result.QRCodeURL,
 	})
+}
+
+func (c CustomerController) RegisterPublicMember(w http.ResponseWriter, r *http.Request) {
+	merchantSlug, ok := c.merchantSlugFromPublicMemberPath(r.URL.Path)
+	if !ok {
+		writeError(w, http.StatusNotFound, errRouteNotFound.Error())
+		return
+	}
+
+	var request publicRegisterMemberRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request body")
+		return
+	}
+
+	result, err := c.members.RegisterMemberByMerchantSlug(r.Context(), merchantSlug, service.RegisterMemberInput{
+		Name:  request.Name,
+		Email: request.Email,
+	})
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, registerMemberResponse{
+		Member:     result.Member,
+		PassURL:    result.PassURL,
+		PreviewURL: result.PreviewURL,
+		QRCodeURL:  result.QRCodeURL,
+	})
+}
+
+func (c CustomerController) merchantSlugFromPublicMemberPath(path string) (string, bool) {
+	const suffix = "/members/register"
+	if !hasRouteShape(path, c.publicPathPrefix, suffix) {
+		return "", false
+	}
+	return trimRouteValue(path, c.publicPathPrefix, suffix), true
 }
 
 type MerchantController struct {
@@ -320,6 +365,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "merchant or merchant_email already exists")
 	case errors.Is(err, domain.ErrInvalidMerchantCredentials):
 		writeError(w, http.StatusUnauthorized, "invalid email or password")
+	case errors.Is(err, domain.ErrMerchantNotFound):
+		writeError(w, http.StatusNotFound, "merchant not found")
 	case errors.Is(err, domain.ErrStoreMemberNotFound):
 		writeError(w, http.StatusNotFound, "member not found")
 	default:

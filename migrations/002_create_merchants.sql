@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS merchants (
     first_name TEXT NOT NULL DEFAULT '',
     last_name TEXT NOT NULL DEFAULT '',
     merchant TEXT NOT NULL UNIQUE,
+    merchant_slug TEXT NOT NULL UNIQUE,
     merchant_email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
@@ -15,10 +16,11 @@ CREATE INDEX IF NOT EXISTS idx_merchants_merchant_email
 
 -- Backfill merchants from existing member rows so the FK can be introduced
 -- without breaking local POC data. Replace placeholder emails later.
-INSERT INTO merchants (merchant_id, merchant, merchant_email)
+INSERT INTO merchants (merchant_id, merchant, merchant_slug, merchant_email)
 SELECT
     'MCH-' || UPPER(SUBSTRING(MD5(merchant) FROM 1 FOR 8)),
     merchant,
+    LOWER(REGEXP_REPLACE(TRIM(BOTH '-' FROM REGEXP_REPLACE(merchant, '[^a-zA-Z0-9]+', '-', 'g')), '-+', '-', 'g')),
     LOWER(REGEXP_REPLACE(merchant, '[^a-zA-Z0-9]+', '.', 'g')) || '@example.com'
 FROM (
     SELECT DISTINCT merchant
