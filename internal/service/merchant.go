@@ -13,6 +13,7 @@ import (
 
 type MerchantRepository interface {
 	Create(ctx context.Context, input domain.CreateMerchantInput) (domain.Merchant, error)
+	GetByEmail(ctx context.Context, email string) (domain.MerchantCredentials, error)
 }
 
 type RegisterMerchantInput struct {
@@ -24,14 +25,26 @@ type RegisterMerchantInput struct {
 }
 
 type MerchantService struct {
-	repo    MerchantRepository
-	timeout time.Duration
+	repo         MerchantRepository
+	tokenManager TokenManager
+	timeout      time.Duration
 }
 
-func NewMerchantService(repo MerchantRepository) MerchantService {
+type LoginMerchantInput struct {
+	Email    string
+	Password string
+}
+
+type LoginMerchantResult struct {
+	Merchant domain.Merchant
+	Token    string
+}
+
+func NewMerchantService(repo MerchantRepository, tokenManager TokenManager) MerchantService {
 	return MerchantService{
-		repo:    repo,
-		timeout: 5 * time.Second,
+		repo:         repo,
+		tokenManager: tokenManager,
+		timeout:      5 * time.Second,
 	}
 }
 
@@ -76,6 +89,38 @@ func (s MerchantService) RegisterMerchant(ctx context.Context, input RegisterMer
 	return merchant, nil
 }
 
+func (s MerchantService) LoginMerchant(ctx context.Context, input LoginMerchantInput) (LoginMerchantResult, error) {
+	if s.repo == nil {
+		return LoginMerchantResult{}, ErrRepositoryUnavailable
+	}
+
+	input.Email = strings.TrimSpace(strings.ToLower(input.Email))
+	if err := validateLoginMerchantInput(input); err != nil {
+		return LoginMerchantResult{}, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	merchant, err := s.repo.GetByEmail(ctx, input.Email)
+	if err != nil {
+		return LoginMerchantResult{}, domain.ErrInvalidMerchantCredentials
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(merchant.PasswordHash), []byte(input.Password)); err != nil {
+		return LoginMerchantResult{}, domain.ErrInvalidMerchantCredentials
+	}
+
+	token, err := s.tokenManager.IssueMerchantToken(merchant.MerchantID, merchant.Merchant)
+	if err != nil {
+		return LoginMerchantResult{}, err
+	}
+
+	return LoginMerchantResult{
+		Merchant: merchant.PublicMerchant(),
+		Token:    token,
+	}, nil
+}
+
 func validateRegisterMerchantInput(input RegisterMerchantInput) error {
 	switch {
 	case input.FirstName == "":
@@ -92,6 +137,19 @@ func validateRegisterMerchantInput(input RegisterMerchantInput) error {
 		return ValidationError{Message: "password is required"}
 	case len(input.Password) < 8:
 		return ValidationError{Message: "password must be at least 8 characters"}
+	default:
+		return nil
+	}
+}
+
+func validateLoginMerchantInput(input LoginMerchantInput) error {
+	switch {
+	case input.Email == "":
+		return ValidationError{Message: "email is required"}
+	case !strings.Contains(input.Email, "@"):
+		return ValidationError{Message: "email must be valid"}
+	case input.Password == "":
+		return ValidationError{Message: "password is required"}
 	default:
 		return nil
 	}

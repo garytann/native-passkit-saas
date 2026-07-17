@@ -6,6 +6,7 @@ import (
 )
 
 var ErrMerchantAlreadyExists = errors.New("merchant already exists")
+var ErrInvalidMerchantCredentials = errors.New("invalid merchant credentials")
 
 type Merchant struct {
 	MerchantID    string    `json:"merchant_id"`
@@ -25,4 +26,27 @@ type CreateMerchantInput struct {
 	Company       string
 	MerchantEmail string
 	PasswordHash  string
+}
+
+type MerchantCredentials struct {
+	MerchantID    string
+	FirstName     string
+	LastName      string
+	Merchant      string
+	MerchantEmail string
+	PasswordHash  string
+	Status        string
+	PaymentStatus string
+}
+
+func (m MerchantCredentials) PublicMerchant() Merchant {
+	return Merchant{
+		MerchantID:    m.MerchantID,
+		FirstName:     m.FirstName,
+		LastName:      m.LastName,
+		Merchant:      m.Merchant,
+		MerchantEmail: m.MerchantEmail,
+		Status:        m.Status,
+		PaymentStatus: m.PaymentStatus,
+	}
 }

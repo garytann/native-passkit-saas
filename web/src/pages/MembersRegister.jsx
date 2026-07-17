@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import {
   ArrowRight,
   Check,
-  Coffee,
+  Sparkles,
   WalletCards,
 } from "lucide-react";
 import { API_BASE, API_VERSION_PREFIX, DEFAULT_MERCHANT } from "../config/api";
@@ -51,17 +51,17 @@ export default function MembersRegisterPage() {
   }
 
   return (
-    <div className="public-page">
+    <div className="public-page member-register-page">
       <header className="public-header">
         <div className="public-brand" aria-label={DEFAULT_MERCHANT}>
-          <span className="brand-mark">
-            <Coffee size={23} strokeWidth={2.2} />
+          <span className="auth-mark small">
+            <Sparkles size={20} />
           </span>
           <strong>{DEFAULT_MERCHANT}</strong>
         </div>
       </header>
 
-      <main className="public-registration-layout">
+      <main className="public-registration-layout merchant-registration-layout">
         <section className="public-copy" aria-labelledby="registrationTitle">
           <h1 id="registrationTitle">Join the Reward Club</h1>
           <p>
@@ -74,7 +74,7 @@ export default function MembersRegisterPage() {
           </div>
         </section>
 
-        <section className="registration-card" aria-label="Member registration">
+        <section className="registration-card merchant-registration-card" aria-label="Member registration">
           {status === "ready" && createdMember ? (
             <SuccessPanel passLinks={passLinks} />
           ) : (

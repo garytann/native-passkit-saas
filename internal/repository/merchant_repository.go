@@ -72,6 +72,27 @@ func (r MerchantRepository) Create(ctx context.Context, input domain.CreateMerch
 	}, nil
 }
 
+func (r MerchantRepository) GetByEmail(ctx context.Context, email string) (domain.MerchantCredentials, error) {
+	var merchant merchantModel
+	if err := r.db.WithContext(ctx).First(&merchant, "merchant_email = ?", email).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.MerchantCredentials{}, domain.ErrInvalidMerchantCredentials
+		}
+		return domain.MerchantCredentials{}, fmt.Errorf("get merchant by email: %w", err)
+	}
+
+	return domain.MerchantCredentials{
+		MerchantID:    merchant.MerchantID,
+		FirstName:     merchant.FirstName,
+		LastName:      merchant.LastName,
+		Merchant:      merchant.Merchant,
+		MerchantEmail: merchant.MerchantEmail,
+		PasswordHash:  merchant.PasswordHash,
+		Status:        merchant.Status,
+		PaymentStatus: merchant.PaymentStatus,
+	}, nil
+}
+
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"

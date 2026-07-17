@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   Bell,
@@ -26,7 +26,7 @@ import {
   Users,
   WalletCards,
 } from "lucide-react";
-import { API_BASE, API_VERSION_PREFIX, DEFAULT_MERCHANT } from "./config/api";
+import { API_BASE, API_VERSION_PREFIX, DEFAULT_MERCHANT, MERCHANT_SESSION_KEY } from "./config/api";
 
 const navItems = [
   { label: "Dashboard", icon: Home, key: "dashboard" },
@@ -44,17 +44,11 @@ const customerTabs = [
   { key: "engagement", label: "Customer Engagement", icon: Megaphone },
 ];
 
-const memberRows = [
-  { id: "member-1001", name: "Taylor Example", email: "taylor@example.com", stamps: "6 / 10", status: "Active", joined: "Today" },
-  { id: "member-1002", name: "Alicia Tan", email: "alicia@example.com", stamps: "3 / 10", status: "Active", joined: "Yesterday" },
-  { id: "member-1003", name: "Marcus Lee", email: "marcus@example.com", stamps: "10 / 10", status: "Reward ready", joined: "Jul 1" },
-  { id: "member-1004", name: "Nora Wong", email: "nora@example.com", stamps: "1 / 10", status: "New", joined: "Jun 28" },
-];
-
 const activityBars = [42, 56, 48, 68, 86, 72, 80];
 const trendLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 export default function App() {
+  const [session, setSession] = useState(null);
   const [activeView, setActiveView] = useState("dashboard");
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [customerTab, setCustomerTab] = useState("members");
@@ -63,9 +57,44 @@ export default function App() {
     email: "taylor@example.com",
     merchant: DEFAULT_MERCHANT,
   });
+  const [members, setMembers] = useState([]);
+  const [membersStatus, setMembersStatus] = useState("idle");
+  const [membersError, setMembersError] = useState("");
   const [passLinks, setPassLinks] = useState(null);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    const rawSession = window.localStorage.getItem(MERCHANT_SESSION_KEY);
+    if (!rawSession) {
+      window.location.href = "/login";
+      return;
+    }
+
+    try {
+      const parsedSession = JSON.parse(rawSession);
+      if (!parsedSession?.token || !parsedSession?.merchant?.merchant) {
+        window.localStorage.removeItem(MERCHANT_SESSION_KEY);
+        window.location.href = "/login";
+        return;
+      }
+      setSession(parsedSession);
+      setRegistration((current) => ({
+        ...current,
+        merchant: parsedSession.merchant.merchant,
+      }));
+    } catch {
+      window.localStorage.removeItem(MERCHANT_SESSION_KEY);
+      window.location.href = "/login";
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!session?.token) {
+      return;
+    }
+    loadMembers(session.token);
+  }, [session]);
 
   const previewUrl = useMemo(() => {
     const safeId = encodeURIComponent(passLinks?.member?.member_id ?? "member-1001");
@@ -88,10 +117,47 @@ export default function App() {
       const data = await response.json();
       setPassLinks(data);
       setStatus("ready");
+      await loadMembers(session?.token);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to generate preview");
       setStatus("error");
     }
+  }
+
+  async function loadMembers(token) {
+    if (!token) {
+      return;
+    }
+    setMembersStatus("loading");
+    setMembersError("");
+    try {
+      const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/customers/members`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error ?? `Members endpoint returned ${response.status}`);
+      }
+      const data = await response.json();
+      setMembers(data.members ?? []);
+      setMembersStatus("ready");
+    } catch (err) {
+      setMembersError(err instanceof Error ? err.message : "Unable to load members");
+      setMembersStatus("error");
+      if (err instanceof Error && err.message === "unauthorized") {
+        window.localStorage.removeItem(MERCHANT_SESSION_KEY);
+        window.location.href = "/login";
+      }
+    }
+  }
+
+  function logout() {
+    window.localStorage.removeItem(MERCHANT_SESSION_KEY);
+    window.location.href = "/login";
+  }
+
+  if (!session) {
+    return null;
   }
 
   return (
@@ -108,7 +174,7 @@ export default function App() {
       />
 
       <main className="workspace">
-        <Topbar activeView={activeView} onNavigate={setActiveView} />
+        <Topbar activeView={activeView} onNavigate={setActiveView} session={session} onLogout={logout} />
 
         {activeView === "customers" ? (
           <CustomersContent
@@ -120,6 +186,9 @@ export default function App() {
             passLinks={passLinks}
             status={status}
             error={error}
+            members={members}
+            membersStatus={membersStatus}
+            membersError={membersError}
             onRegister={registerMember}
           />
         ) : (
@@ -172,7 +241,7 @@ function Sidebar({ activeView, expanded, onToggle, onNavigate }) {
   );
 }
 
-function Topbar({ activeView, onNavigate }) {
+function Topbar({ activeView, onNavigate, session, onLogout }) {
   return (
     <header className="topbar">
       <div className="top-tabs">
@@ -205,10 +274,20 @@ function Topbar({ activeView, onNavigate }) {
         <button className="round-control" aria-label="Messages" title="Messages">
           <Mail size={18} />
         </button>
-        <div className="avatar" aria-label="Admin profile">GX</div>
+        <button className="pill-control" type="button" onClick={onLogout}>
+          Logout
+        </button>
+        <div className="avatar" aria-label="Admin profile">{merchantInitials(session?.merchant)}</div>
       </div>
     </header>
   );
+}
+
+function merchantInitials(merchant) {
+  const first = merchant?.first_name?.[0] ?? "";
+  const last = merchant?.last_name?.[0] ?? "";
+  const initials = `${first}${last}`.toUpperCase();
+  return initials || "SL";
 }
 
 function PageHeading({ current, title, actionLabel = "New Campaign" }) {
@@ -288,7 +367,9 @@ function CustomersContent(props) {
               <h2>{activeTab.label}</h2>
             </div>
           </div>
-          {props.customerTab === "members" ? <MembersTable /> : null}
+          {props.customerTab === "members" ? (
+            <MembersTable members={props.members} status={props.membersStatus} error={props.membersError} />
+          ) : null}
           {props.customerTab === "registration" ? <PassGenerator {...props} /> : null}
           {props.customerTab === "engagement" ? <CustomerEngagement /> : null}
         </div>
@@ -358,6 +439,7 @@ function PassGenerator({ registration, setRegistration, previewUrl, passLinks, s
               id="customerMerchant"
               value={registration.merchant}
               onChange={(event) => updateRegistration("merchant", event.target.value)}
+              readOnly
             />
             <button className="primary-action" type="submit" disabled={status === "loading"}>
               <UserPlus size={18} />
@@ -393,15 +475,20 @@ function PassGenerator({ registration, setRegistration, previewUrl, passLinks, s
   );
 }
 
-function MembersTable() {
+function MembersTable({ members, status, error }) {
+  const activeMembers = members.filter((member) => member.status === "active").length;
+  const rewardReadyMembers = members.filter((member) => member.status === "reward_ready").length;
+
   return (
     <div className="members-panel">
       <div className="table-summary">
-        <MetricCard label="Onboarded users" value="842" delta="+8.4%" icon={Users} />
-        <MetricCard label="Wallet adds" value="728" delta="+11.6%" icon={WalletCards} />
-        <MetricCard label="Reward ready" value="34" delta="+3.2%" icon={Sparkles} />
+        <MetricCard label="Onboarded users" value={String(members.length)} delta="Scoped" icon={Users} />
+        <MetricCard label="Active members" value={String(activeMembers)} delta="Merchant only" icon={WalletCards} />
+        <MetricCard label="Reward ready" value={String(rewardReadyMembers)} delta="Live data" icon={Sparkles} />
       </div>
       <div className="table-wrap">
+        {status === "loading" ? <p className="table-state">Loading members</p> : null}
+        {error ? <p className="table-state error">{error}</p> : null}
         <table>
           <thead>
             <tr>
@@ -414,21 +501,37 @@ function MembersTable() {
             </tr>
           </thead>
           <tbody>
-            {memberRows.map((row) => (
-              <tr key={row.id}>
-                <td>{row.id}</td>
-                <td>{row.name}</td>
-                <td>{row.email}</td>
-                <td>{row.stamps}</td>
-                <td><span className="status-pill">{row.status}</span></td>
-                <td>{row.joined}</td>
+            {members.map((member) => (
+              <tr key={member.member_id}>
+                <td>{member.member_id}</td>
+                <td>{member.customer_name}</td>
+                <td>{member.customer_email}</td>
+                <td>{member.stamp_progress} / 10</td>
+                <td><span className="status-pill">{member.status}</span></td>
+                <td>{formatDate(member.creation_date)}</td>
               </tr>
             ))}
+            {status !== "loading" && members.length === 0 ? (
+              <tr>
+                <td colSpan={6}>No members registered for this merchant yet.</td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>
     </div>
   );
+}
+
+function formatDate(value) {
+  if (!value) {
+    return "-";
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
 }
 
 function CustomerEngagement() {

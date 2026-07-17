@@ -10,6 +10,7 @@ type Config struct {
 	Port             string
 	DatabaseURL      string
 	PublicBaseURL    string
+	AuthTokenSecret  string
 	PassTypeID       string
 	TeamID           string
 	OrganizationName string
@@ -27,6 +28,7 @@ func Load() Config {
 		Port:             env("PORT", "8080"),
 		DatabaseURL:      env("DATABASE_URL", ""),
 		PublicBaseURL:    env("PUBLIC_BASE_URL", "http://localhost:8080"),
+		AuthTokenSecret:  env("AUTH_TOKEN_SECRET", "dev-only-change-me"),
 		PassTypeID:       env("APPLE_PASS_TYPE_ID", "pass.com.example.membership"),
 		TeamID:           env("APPLE_TEAM_ID", "ABCDE12345"),
 		OrganizationName: env("APPLE_ORGANIZATION_NAME", "Example Company"),

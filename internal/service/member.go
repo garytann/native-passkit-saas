@@ -13,6 +13,7 @@ import (
 type MemberRepository interface {
 	Create(ctx context.Context, input domain.CreateStoreMemberInput) (domain.StoreMember, error)
 	GetByID(ctx context.Context, memberID string) (domain.StoreMember, error)
+	ListByMerchant(ctx context.Context, merchant string) ([]domain.StoreMember, error)
 }
 
 type RegisterMemberInput struct {
@@ -87,6 +88,27 @@ func (s MemberService) RegisterMember(ctx context.Context, input RegisterMemberI
 		PreviewURL: s.linker.PreviewURL(member.MemberID),
 		QRCodeURL:  s.linker.QRCodeURL(member.MemberID),
 	}, nil
+}
+
+func (s MemberService) ListMembersForMerchant(ctx context.Context, merchant string) ([]domain.StoreMember, error) {
+	if s.repo == nil {
+		return nil, ErrRepositoryUnavailable
+	}
+
+	merchant = strings.TrimSpace(merchant)
+	if merchant == "" {
+		return nil, ValidationError{Message: "merchant is required"}
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	members, err := s.repo.ListByMerchant(ctx, merchant)
+	if err != nil {
+		return nil, fmt.Errorf("list members for merchant: %w", err)
+	}
+
+	return members, nil
 }
 
 func validateRegisterMemberInput(input RegisterMemberInput) error {

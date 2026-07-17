@@ -32,10 +32,14 @@ func (HealthController) Check(w http.ResponseWriter, _ *http.Request) {
 
 type CustomerController struct {
 	members service.MemberService
+	tokens  service.TokenManager
 }
 
-func NewCustomerController(members service.MemberService) CustomerController {
-	return CustomerController{members: members}
+func NewCustomerController(members service.MemberService, tokens service.TokenManager) CustomerController {
+	return CustomerController{
+		members: members,
+		tokens:  tokens,
+	}
 }
 
 type registerMemberRequest struct {
@@ -49,6 +53,32 @@ type registerMemberResponse struct {
 	PassURL    string             `json:"pass_url"`
 	PreviewURL string             `json:"preview_url"`
 	QRCodeURL  string             `json:"qr_code_url"`
+}
+
+type listMembersResponse struct {
+	Members []domain.StoreMember `json:"members"`
+}
+
+func (c CustomerController) ListMembers(w http.ResponseWriter, r *http.Request) {
+	token, err := service.BearerToken(r.Header.Get("Authorization"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	claims, err := c.tokens.VerifyMerchantToken(token)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	members, err := c.members.ListMembersForMerchant(r.Context(), claims.Merchant)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, listMembersResponse{Members: members})
 }
 
 func (c CustomerController) RegisterMember(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +126,16 @@ type registerMerchantResponse struct {
 	Merchant domain.Merchant `json:"merchant"`
 }
 
+type loginMerchantRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type loginMerchantResponse struct {
+	Merchant domain.Merchant `json:"merchant"`
+	Token    string          `json:"token"`
+}
+
 func (c MerchantController) RegisterMerchant(w http.ResponseWriter, r *http.Request) {
 	var request registerMerchantRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -117,6 +157,28 @@ func (c MerchantController) RegisterMerchant(w http.ResponseWriter, r *http.Requ
 
 	writeJSON(w, http.StatusCreated, registerMerchantResponse{
 		Merchant: merchant,
+	})
+}
+
+func (c MerchantController) LoginMerchant(w http.ResponseWriter, r *http.Request) {
+	var request loginMerchantRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request body")
+		return
+	}
+
+	result, err := c.merchants.LoginMerchant(r.Context(), service.LoginMerchantInput{
+		Email:    request.Email,
+		Password: request.Password,
+	})
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, loginMerchantResponse{
+		Merchant: result.Merchant,
+		Token:    result.Token,
 	})
 }
 
@@ -250,10 +312,14 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrRepositoryUnavailable):
 		writeError(w, http.StatusServiceUnavailable, err.Error())
+	case errors.Is(err, service.ErrUnauthorized):
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 	case errors.As(err, &validationErr):
 		writeError(w, http.StatusBadRequest, validationErr.Error())
 	case errors.Is(err, domain.ErrMerchantAlreadyExists):
 		writeError(w, http.StatusConflict, "merchant or merchant_email already exists")
+	case errors.Is(err, domain.ErrInvalidMerchantCredentials):
+		writeError(w, http.StatusUnauthorized, "invalid email or password")
 	case errors.Is(err, domain.ErrStoreMemberNotFound):
 		writeError(w, http.StatusNotFound, "member not found")
 	default:

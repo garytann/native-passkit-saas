@@ -35,18 +35,21 @@ func (s Server) Routes() http.Handler {
 	v1 := newRouteGroup(mux, APIV1Prefix)
 
 	linker := newPassLinker(s.cfg.PublicBaseURL)
+	tokenManager := service.NewTokenManager(s.cfg.AuthTokenSecret)
 	memberService := service.NewMemberService(s.memberRepo, linker)
-	merchantService := service.NewMerchantService(s.merchantRepo)
+	merchantService := service.NewMerchantService(s.merchantRepo, tokenManager)
 	passService := service.NewPassService(s.cfg, s.memberRepo, linker)
 
 	healthController := controller.HealthController{}
-	customerController := controller.NewCustomerController(memberService)
+	customerController := controller.NewCustomerController(memberService, tokenManager)
 	merchantController := controller.NewMerchantController(merchantService)
 	passController := controller.NewPassController(passService, v1.Path("/apple/passes/"))
 
 	v1.HandleFunc("/healthz", method(http.MethodGet, healthController.Check))
+	v1.HandleFunc("/customers/members", method(http.MethodGet, customerController.ListMembers))
 	v1.HandleFunc("/customers/members/register", method(http.MethodPost, customerController.RegisterMember))
 	v1.HandleFunc("/merchants/register", method(http.MethodPost, merchantController.RegisterMerchant))
+	v1.HandleFunc("/merchants/login", method(http.MethodPost, merchantController.LoginMerchant))
 	v1.HandleFunc("/apple/passes/example", method(http.MethodGet, passController.Example))
 	v1.HandleFunc("/apple/passes/", method(http.MethodGet, passController.Routes))
 

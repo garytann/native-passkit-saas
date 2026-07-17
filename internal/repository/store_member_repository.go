@@ -179,3 +179,28 @@ func (r StoreMemberRepository) GetByID(ctx context.Context, memberID string) (do
 		Status:        member.Status,
 	}, nil
 }
+
+func (r StoreMemberRepository) ListByMerchant(ctx context.Context, merchantName string) ([]domain.StoreMember, error) {
+	var rows []storeMemberModel
+	if err := r.db.WithContext(ctx).
+		Where("merchant = ?", merchantName).
+		Order("creation_date DESC").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list store members by merchant: %w", err)
+	}
+
+	members := make([]domain.StoreMember, 0, len(rows))
+	for _, member := range rows {
+		members = append(members, domain.StoreMember{
+			MemberID:      member.MemberID,
+			CreationDate:  member.CreationDate,
+			CustomerName:  member.CustomerName,
+			CustomerEmail: member.CustomerEmail,
+			Merchant:      member.Merchant,
+			StampProgress: member.StampProgress,
+			Status:        member.Status,
+		})
+	}
+
+	return members, nil
+}

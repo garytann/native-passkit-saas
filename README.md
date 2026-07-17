@@ -19,6 +19,8 @@ Routes are mounted through a single API version group in `internal/httpapi/route
 
 - `GET /api/v1/healthz` - service health check.
 - `POST /api/v1/merchants/register` - registers a SaaS merchant account.
+- `POST /api/v1/merchants/login` - validates merchant email/password and returns a merchant token.
+- `GET /api/v1/customers/members` - returns members scoped to the authenticated merchant.
 - `GET /api/v1/apple/passes/example` - returns a sample pass URL.
 - `GET /api/v1/apple/passes/{memberID}/preview` - renders an unsigned browser preview.
 - `GET /api/v1/apple/passes/{memberID}/qr.png` - renders the preview QR code as a PNG.
@@ -70,6 +72,7 @@ You can also export values directly:
 ```sh
 export PORT=8080
 export PUBLIC_BASE_URL=http://localhost:8080
+export AUTH_TOKEN_SECRET=change-me-for-local-dev
 export DATABASE_URL="postgres://postgres:postgres@localhost:5432/passkit_wip?sslmode=disable"
 export APPLE_PASS_TYPE_ID=pass.com.yourcompany.membership
 export APPLE_TEAM_ID=YOURTEAMID
@@ -160,6 +163,44 @@ Response:
     "payment_status": "inactive"
   }
 }
+```
+
+## Merchant Login API
+
+```http
+POST /api/v1/merchants/login
+Content-Type: application/json
+```
+
+Request:
+
+```json
+{
+  "email": "owner@dailybrew.example",
+  "password": "password123"
+}
+```
+
+Response:
+
+```json
+{
+  "merchant": {
+    "merchant_id": "MCH-8K4J2QPA",
+    "merchant": "Daily Brew",
+    "merchant_email": "owner@dailybrew.example",
+    "payment_status": "inactive",
+    "status": "active"
+  },
+  "token": "signed-merchant-token"
+}
+```
+
+Use the token to load merchant-scoped members:
+
+```http
+GET /api/v1/customers/members
+Authorization: Bearer signed-merchant-token
 ```
 
 ## Member Registration API
