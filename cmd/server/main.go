@@ -5,42 +5,20 @@ import (
 	"log"
 	"net/http"
 
+	"native-ios-passkit-wip/internal/app"
 	"native-ios-passkit-wip/internal/config"
-	"native-ios-passkit-wip/internal/database"
-	"native-ios-passkit-wip/internal/httpapi"
-	"native-ios-passkit-wip/internal/repository"
 )
 
 func main() {
 	cfg := config.Load()
 
-	var memberRepo httpapi.MemberRepository
-	var merchantRepo httpapi.MerchantRepository
-	if cfg.DatabaseURL == "" {
-		log.Printf("DATABASE_URL is not set; member registration endpoint will be unavailable")
-	} else {
-		db, err := database.OpenPostgres(context.Background(), cfg.DatabaseURL)
-		if err != nil {
-			log.Fatalf("connect postgres: %v", err)
-		}
-		sqlDB, err := db.DB()
-		if err != nil {
-			log.Fatalf("get postgres pool: %v", err)
-		}
-		defer sqlDB.Close()
-		if err := repository.AutoMigrateMerchants(db); err != nil {
-			log.Fatalf("migrate merchants: %v", err)
-		}
-		if err := repository.AutoMigrateStoreMembers(db); err != nil {
-			log.Fatalf("migrate store members: %v", err)
-		}
-		memberRepo = repository.NewStoreMemberRepository(db)
-		merchantRepo = repository.NewMerchantRepository(db)
+	handler, cleanup, err := app.NewHTTPHandler(context.Background(), cfg)
+	if err != nil {
+		log.Fatalf("initialize application: %v", err)
 	}
-
-	server := httpapi.NewServer(cfg, memberRepo, merchantRepo)
+	defer cleanup()
 
 	addr := ":" + cfg.Port
 	log.Printf("native iOS PassKit backend listening on http://localhost%s", addr)
-	log.Fatal(http.ListenAndServe(addr, server.Routes()))
+	log.Fatal(http.ListenAndServe(addr, handler))
 }

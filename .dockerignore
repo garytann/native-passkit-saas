@@ -1,0 +1,13 @@
+.git
+.gocache
+.env
+tmp
+dist
+*.pkpass
+
+web/node_modules
+web/dist
+
+certs/*
+!certs/.gitkeep
+!certs/README.md

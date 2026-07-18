@@ -90,17 +90,13 @@ Put local PEM files in `certs/`. Do not commit real certificates or private keys
 
 This project uses Postgres for member registration. The Go database layer uses GORM with the Postgres driver to build and execute SQL.
 
-For local development, `go run ./cmd/server` will:
+The backend does not create the database and does not run schema migrations during server startup. It only opens the configured `DATABASE_URL` and pings the database. This keeps database lifecycle concerns outside the application process.
 
-1. Connect to the maintenance `postgres` database.
-2. Create the target database from `DATABASE_URL` if it does not exist.
-3. Connect to that target database.
-4. Run GORM auto-migration for `store_members`.
-
-You can still apply the SQL migration manually if you prefer explicit migration control:
+For local development without Docker, create the database first and apply the SQL migrations manually:
 
 ```sh
-psql "$DATABASE_URL" -f migrations/001_create_store_members.sql
+createdb passkit_wip
+for file in migrations/*.sql; do psql "$DATABASE_URL" -f "$file"; done
 ```
 
 The migration creates `store_members` with:
@@ -131,6 +127,47 @@ The second migration creates `merchants` for SaaS merchant onboarding:
 `merchants.merchant` is unique and is referenced by `store_members.merchant`, so existing member registration can keep sending the merchant name while the platform maintains a dedicated merchant table.
 
 Merchant registration accepts a plain `password` in the API request, hashes it with bcrypt in the service layer, and stores only `password_hash`. New merchants start with `payment_status` set to `inactive`; payment activation can be added later.
+
+## Docker Compose
+
+The easiest way to run the full POC stack is Docker Compose:
+
+```sh
+docker compose up --build
+```
+
+This starts:
+
+- `db` - Postgres 16, with database `passkit_wip`.
+- `backend` - Go API inside the Compose network.
+- `web` - React admin console inside the Compose network.
+- `proxy` - Nginx reverse proxy on `http://localhost:8080`.
+
+Use the proxy URL for both app and API access:
+
+```text
+http://localhost:8080/
+http://localhost:8080/api/v1/healthz
+```
+
+The proxy routes `/api/v1/...` to the Go backend and all other paths to the React web app. This keeps the browser on one origin, which is closer to the shape you would deploy behind a public load balancer later.
+
+Make sure Docker Desktop is running before starting Compose. If you already have a local Postgres using port `5432`, either stop that local instance or change the `db` port mapping in `docker-compose.yml`. If port `8080` is already used by a locally running backend, stop that process before starting the Compose stack or change the `proxy` port mapping.
+
+Postgres runs the files in `migrations/` through `/docker-entrypoint-initdb.d` when the database volume is created for the first time. If you change an initialization migration and want a fresh local database, reset the Compose volume:
+
+```sh
+docker compose down -v
+docker compose up --build
+```
+
+The backend container mounts `./certs` read-only at `/app/certs`, so your Apple Wallet certificate paths can stay as:
+
+```text
+certs/pass-cert.pem
+certs/pass-key.pem
+certs/wwdr.pem
+```
 
 ## Merchant Registration API
 
