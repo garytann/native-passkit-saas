@@ -14,6 +14,7 @@ import (
 const readableAlphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 
 var ErrStoreMemberNotFound = errors.New("store member not found")
+var ErrStoreMemberForbidden = errors.New("store member does not belong to merchant")
 
 type StoreMember struct {
 	MemberID      string    `json:"member_id"`
@@ -30,6 +31,13 @@ type CreateStoreMemberInput struct {
 	CustomerName  string
 	CustomerEmail string
 	Merchant      string
+}
+
+type StampUpdate struct {
+	Member                StoreMember `json:"member"`
+	StampDelta            int         `json:"stamp_delta"`
+	PreviousStampProgress int         `json:"previous_stamp_progress"`
+	NewStampProgress      int         `json:"new_stamp_progress"`
 }
 
 func NewReadableMemberID() (string, error) {

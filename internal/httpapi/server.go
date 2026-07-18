@@ -48,6 +48,7 @@ func (s Server) Routes() http.Handler {
 	v1.HandleFunc("/healthz", method(http.MethodGet, healthController.Check))
 	v1.HandleFunc("/customers/members", method(http.MethodGet, customerController.ListMembers))
 	v1.HandleFunc("/customers/members/register", method(http.MethodPost, customerController.RegisterMember))
+	v1.HandleFunc("/customers/members/", method(http.MethodPut, customerController.UpdateMemberStamps))
 	v1.HandleFunc("/public/merchants/", method(http.MethodPost, customerController.RegisterPublicMember))
 	v1.HandleFunc("/merchants/register", method(http.MethodPost, merchantController.RegisterMerchant))
 	v1.HandleFunc("/merchants/login", method(http.MethodPost, merchantController.LoginMerchant))

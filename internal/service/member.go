@@ -14,6 +14,7 @@ type MemberRepository interface {
 	Create(ctx context.Context, input domain.CreateStoreMemberInput) (domain.StoreMember, error)
 	GetByID(ctx context.Context, memberID string) (domain.StoreMember, error)
 	ListByMerchant(ctx context.Context, merchant string) ([]domain.StoreMember, error)
+	UpdateStampProgressForMerchant(ctx context.Context, memberID string, merchant string, delta int) (domain.StampUpdate, error)
 }
 
 type RegisterMemberInput struct {
@@ -27,6 +28,12 @@ type RegisterMemberResult struct {
 	PassURL    string
 	PreviewURL string
 	QRCodeURL  string
+}
+
+type UpdateMemberStampsInput struct {
+	MemberID   string
+	Merchant   string
+	StampDelta int
 }
 
 type MemberService struct {
@@ -147,6 +154,31 @@ func (s MemberService) RegisterMemberByMerchantSlug(ctx context.Context, merchan
 	return s.RegisterMember(ctx, input)
 }
 
+func (s MemberService) UpdateMemberStamps(ctx context.Context, input UpdateMemberStampsInput) (domain.StampUpdate, error) {
+	if s.repo == nil {
+		return domain.StampUpdate{}, ErrRepositoryUnavailable
+	}
+
+	input.MemberID = strings.TrimSpace(input.MemberID)
+	input.Merchant = strings.TrimSpace(input.Merchant)
+	if err := validateUpdateMemberStampsInput(input); err != nil {
+		return domain.StampUpdate{}, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	update, err := s.repo.UpdateStampProgressForMerchant(ctx, input.MemberID, input.Merchant, input.StampDelta)
+	if err != nil {
+		if errors.Is(err, domain.ErrStoreMemberForbidden) {
+			return domain.StampUpdate{}, ErrForbidden
+		}
+		return domain.StampUpdate{}, fmt.Errorf("update member stamps: %w", err)
+	}
+
+	return update, nil
+}
+
 func validateRegisterMemberInput(input RegisterMemberInput) error {
 	switch {
 	case input.Name == "":
@@ -157,6 +189,21 @@ func validateRegisterMemberInput(input RegisterMemberInput) error {
 		return ValidationError{Message: "email must be valid"}
 	case input.Merchant == "":
 		return ValidationError{Message: "merchant is required"}
+	default:
+		return nil
+	}
+}
+
+func validateUpdateMemberStampsInput(input UpdateMemberStampsInput) error {
+	switch {
+	case input.MemberID == "":
+		return ValidationError{Message: "member id is required"}
+	case input.Merchant == "":
+		return ValidationError{Message: "merchant is required"}
+	case input.StampDelta == 0:
+		return ValidationError{Message: "stamp_delta is required"}
+	case input.StampDelta < -10 || input.StampDelta > 10:
+		return ValidationError{Message: "stamp_delta must be between -10 and 10"}
 	default:
 		return nil
 	}

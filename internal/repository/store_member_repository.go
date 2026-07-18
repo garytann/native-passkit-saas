@@ -217,3 +217,63 @@ func (r StoreMemberRepository) ListByMerchant(ctx context.Context, merchantName 
 
 	return members, nil
 }
+
+func (r StoreMemberRepository) UpdateStampProgressForMerchant(ctx context.Context, memberID string, merchantName string, delta int) (domain.StampUpdate, error) {
+	var update domain.StampUpdate
+
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var member storeMemberModel
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&member, "member_id = ?", memberID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return domain.ErrStoreMemberNotFound
+			}
+			return fmt.Errorf("get store member for stamp update: %w", err)
+		}
+
+		if member.Merchant != merchantName {
+			return domain.ErrStoreMemberForbidden
+		}
+
+		previous := member.StampProgress
+		next := previous + delta
+		if next < 0 {
+			next = 0
+		}
+		if next > 10 {
+			next = 10
+		}
+
+		member.StampProgress = next
+		if next >= 10 {
+			member.Status = "reward_ready"
+		} else if member.Status == "reward_ready" {
+			member.Status = "active"
+		}
+
+		if err := tx.Save(&member).Error; err != nil {
+			return fmt.Errorf("update store member stamp progress: %w", err)
+		}
+
+		update = domain.StampUpdate{
+			Member: domain.StoreMember{
+				MemberID:      member.MemberID,
+				CreationDate:  member.CreationDate,
+				CustomerName:  member.CustomerName,
+				CustomerEmail: member.CustomerEmail,
+				Merchant:      member.Merchant,
+				StampProgress: member.StampProgress,
+				Status:        member.Status,
+			},
+			StampDelta:            delta,
+			PreviousStampProgress: previous,
+			NewStampProgress:      next,
+		}
+
+		return nil
+	}); err != nil {
+		return domain.StampUpdate{}, err
+	}
+
+	return update, nil
+}

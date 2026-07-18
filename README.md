@@ -22,6 +22,7 @@ Routes are mounted through a single API version group in `internal/httpapi/route
 - `POST /api/v1/merchants/login` - validates merchant email/password and returns a merchant token.
 - `GET /api/v1/customers/members` - returns members scoped to the authenticated merchant.
 - `POST /api/v1/public/merchants/{merchantSlug}/members/register` - registers a customer from a merchant-owned public signup link.
+- `PUT /api/v1/customers/members/{memberID}/stamps` - updates stamp progress for a member owned by the authenticated merchant.
 - `GET /api/v1/apple/passes/example` - returns a sample pass URL.
 - `GET /api/v1/apple/passes/{memberID}/preview` - renders an unsigned browser preview.
 - `GET /api/v1/apple/passes/{memberID}/qr.png` - renders the preview QR code as a PNG.
@@ -268,6 +269,54 @@ Response:
 
 The returned pass links render from the registered member record. `customer_name` is shown as the member name, `merchant` is shown as the pass brand, and `stamp_progress` controls the displayed stamps.
 
+## Stamp Scanner API
+
+The merchant admin console has a `Customers > Stamp Scanner` tab for the demo stamp workflow. A logged-in merchant can scan the QR code on a customer's Wallet pass, or manually enter the readable member ID if camera scanning is unavailable.
+
+The pass QR payload currently uses this shape:
+
+```text
+stamp-card:MBR-8K4J2QPA
+```
+
+The web app extracts the `MBR-...` value and calls:
+
+```http
+PUT /api/v1/customers/members/MBR-8K4J2QPA/stamps
+Authorization: Bearer signed-merchant-token
+Content-Type: application/json
+```
+
+Request:
+
+```json
+{
+  "stamp_delta": 1
+}
+```
+
+Response:
+
+```json
+{
+  "member": {
+    "member_id": "MBR-8K4J2QPA",
+    "customer_name": "Taylor Example",
+    "customer_email": "taylor@example.com",
+    "merchant": "Daily Brew",
+    "stamp_progress": 7,
+    "status": "active"
+  },
+  "event": {
+    "stamp_delta": 1,
+    "previous_stamp_progress": 6,
+    "new_stamp_progress": 7
+  }
+}
+```
+
+The backend reads the merchant name from the login token, not from the request body. The repository locks the member row, verifies the member belongs to that merchant, clamps stamp progress between `0` and `10`, and returns `403 forbidden` if another merchant attempts the update.
+
 ## Run
 
 ```sh
@@ -313,6 +362,8 @@ http://127.0.0.1:5173/
 ```
 
 The current POC includes a sidebar, dashboard summary cards, placeholder activity panels, and a customer registration form that calls `/api/v1/customers/members/register` and embeds the generated Apple Wallet preview URL.
+
+The stamp scanner is available under `Customers > Stamp Scanner`. Browser QR scanning uses the `BarcodeDetector` API when supported, and the manual member ID field remains available for desktop demos or browsers without camera QR support.
 
 The customer-facing registration POC is available at:
 

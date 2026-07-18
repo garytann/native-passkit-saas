@@ -127,3 +127,20 @@ func TestPublicMerchantMemberRegistrationRouteIsVersioned(t *testing.T) {
 		t.Fatalf("expected public merchant member registration route to return 503 without db, got %d", response.Code)
 	}
 }
+
+func TestUpdateMemberStampsRequiresMerchantToken(t *testing.T) {
+	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080"}, nil, nil)
+	routes := server.Routes()
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(
+		http.MethodPut,
+		"/api/v1/customers/members/MBR-ABC12345/stamps",
+		strings.NewReader(`{"stamp_delta":1}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	routes.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected stamp update route to require auth token, got %d", response.Code)
+	}
+}

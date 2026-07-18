@@ -66,6 +66,21 @@ type listMembersResponse struct {
 	Members []domain.StoreMember `json:"members"`
 }
 
+type updateMemberStampsRequest struct {
+	StampDelta int `json:"stamp_delta"`
+}
+
+type updateMemberStampsResponse struct {
+	Member domain.StoreMember `json:"member"`
+	Event  stampUpdateEvent   `json:"event"`
+}
+
+type stampUpdateEvent struct {
+	StampDelta            int `json:"stamp_delta"`
+	PreviousStampProgress int `json:"previous_stamp_progress"`
+	NewStampProgress      int `json:"new_stamp_progress"`
+}
+
 func (c CustomerController) ListMembers(w http.ResponseWriter, r *http.Request) {
 	token, err := service.BearerToken(r.Header.Get("Authorization"))
 	if err != nil {
@@ -111,6 +126,60 @@ func (c CustomerController) RegisterMember(w http.ResponseWriter, r *http.Reques
 		PreviewURL: result.PreviewURL,
 		QRCodeURL:  result.QRCodeURL,
 	})
+}
+
+func (c CustomerController) UpdateMemberStamps(w http.ResponseWriter, r *http.Request) {
+	memberID, ok := c.memberIDFromStampPath(r.URL.Path)
+	if !ok {
+		writeError(w, http.StatusNotFound, errRouteNotFound.Error())
+		return
+	}
+
+	token, err := service.BearerToken(r.Header.Get("Authorization"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	claims, err := c.tokens.VerifyMerchantToken(token)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	var request updateMemberStampsRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request body")
+		return
+	}
+
+	update, err := c.members.UpdateMemberStamps(r.Context(), service.UpdateMemberStampsInput{
+		MemberID:   memberID,
+		Merchant:   claims.Merchant,
+		StampDelta: request.StampDelta,
+	})
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, updateMemberStampsResponse{
+		Member: update.Member,
+		Event: stampUpdateEvent{
+			StampDelta:            update.StampDelta,
+			PreviousStampProgress: update.PreviousStampProgress,
+			NewStampProgress:      update.NewStampProgress,
+		},
+	})
+}
+
+func (c CustomerController) memberIDFromStampPath(path string) (string, bool) {
+	const prefix = "/api/v1/customers/members/"
+	const suffix = "/stamps"
+	if !hasRouteShape(path, prefix, suffix) {
+		return "", false
+	}
+	return trimRouteValue(path, prefix, suffix), true
 }
 
 func (c CustomerController) RegisterPublicMember(w http.ResponseWriter, r *http.Request) {
@@ -359,6 +428,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 	case errors.Is(err, service.ErrUnauthorized):
 		writeError(w, http.StatusUnauthorized, "unauthorized")
+	case errors.Is(err, service.ErrForbidden):
+		writeError(w, http.StatusForbidden, "forbidden")
 	case errors.As(err, &validationErr):
 		writeError(w, http.StatusBadRequest, validationErr.Error())
 	case errors.Is(err, domain.ErrMerchantAlreadyExists):

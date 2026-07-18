@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   Bell,
@@ -41,6 +41,7 @@ const navItems = [
 const customerTabs = [
   { key: "members", label: "Members", icon: Users },
   { key: "registration", label: "Customer Registration", icon: UserPlus },
+  { key: "scanner", label: "Stamp Scanner", icon: QrCode },
   { key: "engagement", label: "Customer Engagement", icon: Megaphone },
 ];
 
@@ -151,6 +152,29 @@ export default function App() {
     }
   }
 
+  async function updateMemberStamps(memberID, stampDelta = 1) {
+    if (!session?.token) {
+      throw new Error("Login session is required");
+    }
+
+    const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/customers/members/${encodeURIComponent(memberID)}/stamps`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${session.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ stamp_delta: stampDelta }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.error ?? `Stamp endpoint returned ${response.status}`);
+    }
+
+    const data = await response.json();
+    await loadMembers(session.token);
+    return data;
+  }
+
   function logout() {
     window.localStorage.removeItem(MERCHANT_SESSION_KEY);
     window.location.href = "/login";
@@ -191,6 +215,7 @@ export default function App() {
             membersError={membersError}
             session={session}
             onRegister={registerMember}
+            onUpdateStamps={updateMemberStamps}
           />
         ) : (
           <DashboardContent />
@@ -372,6 +397,7 @@ function CustomersContent(props) {
             <MembersTable members={props.members} status={props.membersStatus} error={props.membersError} />
           ) : null}
           {props.customerTab === "registration" ? <PassGenerator {...props} /> : null}
+          {props.customerTab === "scanner" ? <StampScanner onUpdateStamps={props.onUpdateStamps} /> : null}
           {props.customerTab === "engagement" ? <CustomerEngagement /> : null}
         </div>
       </section>
@@ -540,6 +566,190 @@ function MembersTable({ members, status, error }) {
       </div>
     </div>
   );
+}
+
+function StampScanner({ onUpdateStamps }) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const scanTimerRef = useRef(null);
+  const [memberID, setMemberID] = useState("");
+  const [cameraStatus, setCameraStatus] = useState("idle");
+  const [status, setStatus] = useState("idle");
+  const [message, setMessage] = useState("");
+  const [lastUpdate, setLastUpdate] = useState(null);
+
+  useEffect(() => {
+    return () => stopCamera();
+  }, []);
+
+  async function startCamera() {
+    setMessage("");
+    if (!("BarcodeDetector" in window)) {
+      setCameraStatus("unsupported");
+      setMessage("Camera scanning is not supported by this browser. Use manual member ID entry below.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setCameraStatus("scanning");
+      scanTimerRef.current = window.setInterval(scanFrame, 700);
+    } catch (err) {
+      setCameraStatus("error");
+      setMessage(err instanceof Error ? err.message : "Unable to start camera");
+    }
+  }
+
+  function stopCamera() {
+    if (scanTimerRef.current) {
+      window.clearInterval(scanTimerRef.current);
+      scanTimerRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setCameraStatus((current) => current === "scanning" ? "idle" : current);
+  }
+
+  async function scanFrame() {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || video.readyState < 2 || !("BarcodeDetector" in window)) {
+      return;
+    }
+
+    const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    try {
+      const codes = await detector.detect(canvas);
+      if (codes.length === 0) {
+        return;
+      }
+      const scannedID = memberIDFromQRCode(codes[0].rawValue);
+      if (scannedID) {
+        setMemberID(scannedID);
+        setMessage(`Scanned ${scannedID}`);
+      } else {
+        setMessage("QR code scanned, but no member ID was found.");
+      }
+    } catch {
+      setMessage("Unable to read this camera frame.");
+    }
+  }
+
+  async function addStamp(event) {
+    event.preventDefault();
+    const safeMemberID = memberID.trim();
+    if (!safeMemberID) {
+      setMessage("Scan or enter a member ID first.");
+      return;
+    }
+
+    setStatus("loading");
+    setMessage("");
+    try {
+      const result = await onUpdateStamps(safeMemberID, 1);
+      setLastUpdate(result);
+      setStatus("ready");
+      setMessage(`Added 1 stamp for ${result.member.customer_name}.`);
+    } catch (err) {
+      setStatus("error");
+      setMessage(err instanceof Error ? err.message : "Unable to update stamp progress");
+    }
+  }
+
+  return (
+    <article className="scanner-panel">
+      <div className="scanner-grid">
+        <section className="scanner-camera">
+          <div className="panel-heading tight">
+            <div>
+              <span className="eyebrow">Wallet QR</span>
+              <h2>Scan customer pass</h2>
+            </div>
+          </div>
+          <div className="camera-frame">
+            <video ref={videoRef} muted playsInline />
+            <canvas ref={canvasRef} hidden />
+            {cameraStatus !== "scanning" ? (
+              <div className="camera-placeholder">
+                <QrCode size={42} />
+                <span>Camera preview</span>
+              </div>
+            ) : null}
+          </div>
+          <div className="generator-actions scanner-actions">
+            <button className="secondary-action" type="button" onClick={startCamera} disabled={cameraStatus === "scanning"}>
+              <QrCode size={17} />
+              Start Scanner
+            </button>
+            <button className="secondary-action" type="button" onClick={stopCamera}>
+              Stop
+            </button>
+          </div>
+        </section>
+
+        <form className="scanner-form" onSubmit={addStamp}>
+          <div className="panel-heading tight">
+            <div>
+              <span className="eyebrow">Stamp update</span>
+              <h2>Add one stamp</h2>
+            </div>
+          </div>
+          <label htmlFor="scannerMemberID">Member ID</label>
+          <input
+            id="scannerMemberID"
+            placeholder="MBR-ABC12345"
+            value={memberID}
+            onChange={(event) => setMemberID(normalizeMemberIDInput(event.target.value))}
+          />
+          <button className="primary-action" type="submit" disabled={status === "loading"}>
+            <Plus size={18} />
+            {status === "loading" ? "Adding Stamp" : "Add Stamp"}
+          </button>
+          {message ? <p className={`scanner-message ${status === "error" ? "error" : ""}`}>{message}</p> : null}
+          {lastUpdate ? (
+            <div className="stamp-result">
+              <span>{lastUpdate.member.member_id}</span>
+              <strong>{lastUpdate.event.new_stamp_progress} / 10 stamps</strong>
+              <em>{lastUpdate.member.status}</em>
+            </div>
+          ) : null}
+        </form>
+      </div>
+    </article>
+  );
+}
+
+function memberIDFromQRCode(value) {
+  const text = String(value ?? "").trim();
+  const stampPayload = text.match(/^stamp-card:(MBR-[A-Z0-9]+)$/i);
+  if (stampPayload) {
+    return stampPayload[1].toUpperCase();
+  }
+  const memberID = text.match(/MBR-[A-Z0-9]+/i);
+  return memberID ? memberID[0].toUpperCase() : "";
+}
+
+function normalizeMemberIDInput(value) {
+  return String(value ?? "").trim().toUpperCase();
 }
 
 function formatDate(value) {
