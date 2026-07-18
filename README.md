@@ -67,13 +67,13 @@ Copy `.env.example` to `.env` for local development:
 cp .env.example .env
 ```
 
-The backend reads `.env` automatically. Real environment variables still take precedence, which is useful for deployment.
+Docker Compose reads `.env` automatically for container configuration, including database credentials, exposed host ports, auth token secret, and Apple pass settings. The backend also reads `.env` automatically when you run it directly with `go run`; real environment variables still take precedence, which is useful for deployment.
 
 You can also export values directly:
 
 ```sh
 export PORT=8080
-export PUBLIC_BASE_URL=http://localhost:8080
+export PUBLIC_BASE_URL=http://localhost
 export AUTH_TOKEN_SECRET=change-me-for-local-dev
 export DATABASE_URL="postgres://postgres:postgres@localhost:5432/passkit_wip?sslmode=disable"
 export APPLE_PASS_TYPE_ID=pass.com.yourcompany.membership
@@ -136,6 +136,12 @@ The easiest way to run the full POC stack is Docker Compose:
 docker compose up --build
 ```
 
+Compose reads required values from `.env`. Start from the example file if you have not created one yet:
+
+```sh
+cp .env.example .env
+```
+
 This starts:
 
 - `db` - Postgres 16, with database `passkit_wip`.
@@ -152,7 +158,9 @@ http://localhost:8080/api/v1/healthz
 
 The proxy routes `/api/v1/...` to the Go backend and all other paths to the React web app. This keeps the browser on one origin, which is closer to the shape you would deploy behind a public load balancer later.
 
-Make sure Docker Desktop is running before starting Compose. If you already have a local Postgres using port `5432`, either stop that local instance or change the `db` port mapping in `docker-compose.yml`. If port `8080` is already used by a locally running backend, stop that process before starting the Compose stack or change the `proxy` port mapping.
+Make sure Docker Desktop is running before starting Compose. If you already have a local Postgres using port `5432`, either stop that local instance or change `POSTGRES_HOST_PORT` in `.env`. If port `80` is already used locally, change `PROXY_HOST_PORT` in `.env` and update `PUBLIC_BASE_URL` to match, for example `http://localhost:8080`.
+
+For Compose, the backend container gets its `DATABASE_URL` from `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`, using the internal Docker hostname `db`. The `DATABASE_URL` field in `.env` is kept for the separate case where you run the backend directly from your host with `go run ./cmd/server`.
 
 Postgres runs the files in `migrations/` through `/docker-entrypoint-initdb.d` when the database volume is created for the first time. If you change an initialization migration and want a fresh local database, reset the Compose volume:
 
