@@ -444,67 +444,83 @@ function PassGenerator({ registration, setRegistration, previewUrl, passLinks, s
       </div>
 
       <div className="generator-body">
-        <form
-          className="generator-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onRegister();
-          }}
-        >
-          <div className="merchant-link-box">
-            <span>Customer signup link</span>
-            <a href={signupLink} target="_blank" rel="noreferrer">{signupLink}</a>
-          </div>
-          <div className="form-stack">
-            <label htmlFor="customerName">Name</label>
-            <input
-              id="customerName"
-              value={registration.name}
-              onChange={(event) => updateRegistration("name", event.target.value)}
-            />
-            <label htmlFor="customerEmail">Email</label>
-            <input
-              id="customerEmail"
-              type="email"
-              value={registration.email}
-              onChange={(event) => updateRegistration("email", event.target.value)}
-            />
-            <label htmlFor="customerMerchant">Merchant</label>
-            <input
-              id="customerMerchant"
-              value={registration.merchant}
-              onChange={(event) => updateRegistration("merchant", event.target.value)}
-              readOnly
-            />
-            <button className="primary-action" type="submit" disabled={status === "loading"}>
-              <UserPlus size={18} />
-              {status === "loading" ? "Registering" : "Register & Generate Pass"}
-            </button>
-          </div>
-          {error ? <p className="form-error">{error}</p> : null}
-          {createdMember ? (
-            <div className="registration-result">
-              <span>Member ID</span>
-              <strong>{createdMember.member_id}</strong>
-              <em>{createdMember.status} · {createdMember.stamp_progress} stamps</em>
+        <section className="registration-workspace">
+          <form
+            className="generator-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onRegister();
+            }}
+          >
+            <div className="merchant-link-box">
+              <span>Customer signup link</span>
+              <a href={signupLink} target="_blank" rel="noreferrer">{signupLink}</a>
             </div>
-          ) : null}
-        </form>
+            <div className="form-stack">
+              <label htmlFor="customerName">Name</label>
+              <input
+                id="customerName"
+                value={registration.name}
+                onChange={(event) => updateRegistration("name", event.target.value)}
+              />
+              <label htmlFor="customerEmail">Email</label>
+              <input
+                id="customerEmail"
+                type="email"
+                value={registration.email}
+                onChange={(event) => updateRegistration("email", event.target.value)}
+              />
+              <label htmlFor="customerMerchant">Merchant</label>
+              <input
+                id="customerMerchant"
+                value={registration.merchant}
+                onChange={(event) => updateRegistration("merchant", event.target.value)}
+                readOnly
+              />
+              <button className="primary-action" type="submit" disabled={status === "loading"}>
+                <UserPlus size={18} />
+                {status === "loading" ? "Registering" : "Register & Generate Pass"}
+              </button>
+            </div>
+            {error ? <p className="form-error">{error}</p> : null}
+          </form>
 
-        <div className="pass-preview-shell">
-          <iframe title="Apple Wallet pass preview" src={activePreviewUrl} />
-        </div>
-      </div>
+          <aside className="registration-summary" aria-label="Generated pass details">
+            <div>
+              <span className="summary-kicker">Pass output</span>
+              <h3>{createdMember ? "Customer pass is ready" : "Generate a customer pass"}</h3>
+              <p>
+                {createdMember
+                  ? "Use the links below to open the browser preview or download the signed Apple Wallet pass."
+                  : "Register a customer to create their member record and wallet pass links."}
+              </p>
+            </div>
 
-      <div className="generator-actions">
-        <a className="secondary-action" href={activePreviewUrl} target="_blank" rel="noreferrer">
-          <WalletCards size={17} />
-          Open Preview
-        </a>
-        <a className={`secondary-action ${passUrl ? "" : "disabled"}`} href={passUrl || undefined} target="_blank" rel="noreferrer">
-          <Download size={17} />
-          Download .pkpass
-        </a>
+            {createdMember ? (
+              <div className="registration-result">
+                <span>Member ID</span>
+                <strong>{createdMember.member_id}</strong>
+                <em>{createdMember.status} · {createdMember.stamp_progress} stamps</em>
+              </div>
+            ) : (
+              <div className="registration-empty-state">
+                <WalletCards size={22} />
+                <span>No pass generated yet</span>
+              </div>
+            )}
+
+            <div className="generator-actions">
+              <a className={`secondary-action ${createdMember ? "" : "disabled"}`} href={createdMember ? activePreviewUrl : undefined} target="_blank" rel="noreferrer">
+                <WalletCards size={17} />
+                Open Preview
+              </a>
+              <a className={`secondary-action ${passUrl ? "" : "disabled"}`} href={passUrl || undefined} target="_blank" rel="noreferrer">
+                <Download size={17} />
+                Download .pkpass
+              </a>
+            </div>
+          </aside>
+        </section>
       </div>
     </article>
   );
