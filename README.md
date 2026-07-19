@@ -147,18 +147,31 @@ This starts:
 - `db` - Postgres 16, with database `passkit_wip`.
 - `backend` - Go API inside the Compose network.
 - `web` - React admin console inside the Compose network.
-- `proxy` - Nginx reverse proxy on `http://localhost:8080`.
+- `proxy` - Nginx reverse proxy on HTTP and HTTPS.
 
 Use the proxy URL for both app and API access:
 
 ```text
-http://localhost:8080/
-http://localhost:8080/api/v1/healthz
+https://your-domain.example/
+https://your-domain.example/api/v1/healthz
 ```
 
-The proxy routes `/api/v1/...` to the Go backend and all other paths to the React web app. This keeps the browser on one origin, which is closer to the shape you would deploy behind a public load balancer later.
+The proxy redirects HTTP to HTTPS, routes `/api/v1/...` to the Go backend, and routes all other paths to the React web app. This keeps the browser on one origin, which is closer to the shape you would deploy behind a public load balancer later.
 
-Make sure Docker Desktop is running before starting Compose. If you already have a local Postgres using port `5432`, either stop that local instance or change `POSTGRES_HOST_PORT` in `.env`. If port `80` is already used locally, change `PROXY_HOST_PORT` in `.env` and update `PUBLIC_BASE_URL` to match, for example `http://localhost:8080`.
+Set your public domain in `.env`:
+
+```text
+PUBLIC_BASE_URL=https://your-domain.example
+```
+
+Then place your valid TLS files in:
+
+```text
+proxy/certs/fullchain.pem
+proxy/certs/privkey.pem
+```
+
+Make sure Docker Desktop is running before starting Compose. If you already have a local Postgres using port `5432`, either stop that local instance or change `POSTGRES_HOST_PORT` in `.env`. If ports `80` or `443` are already used locally, change `PROXY_HOST_PORT` or `PROXY_HTTPS_HOST_PORT` in `.env` and update `PUBLIC_BASE_URL` to match.
 
 For Compose, the backend container gets its `DATABASE_URL` from `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`, using the internal Docker hostname `db`. The `DATABASE_URL` field in `.env` is kept for the separate case where you run the backend directly from your host with `go run ./cmd/server`.
 

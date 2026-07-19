@@ -11,3 +11,8 @@ web/dist/
 certs/*
 !certs/.gitkeep
 !certs/README.md
+
+# Keep reverse-proxy TLS credentials out of git.
+proxy/certs/*
+!proxy/certs/.gitkeep
+!proxy/certs/README.md

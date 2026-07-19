@@ -11,3 +11,7 @@ web/dist
 certs/*
 !certs/.gitkeep
 !certs/README.md
+
+proxy/certs/*
+!proxy/certs/.gitkeep
+!proxy/certs/README.md
