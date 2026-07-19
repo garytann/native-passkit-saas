@@ -67,6 +67,7 @@ func NewStampCardPass(cfg TemplateConfig, member StampCardMember) Pass {
 		MessageEncoding: "iso-8859-1",
 		AltText:         member.BarcodeID,
 	}
+	loyaltyProgram := loyaltyProgramName(member)
 
 	pass := Pass{
 		FormatVersion:      1,
@@ -75,10 +76,9 @@ func NewStampCardPass(cfg TemplateConfig, member StampCardMember) Pass {
 		TeamIdentifier:     cfg.TeamID,
 		OrganizationName:   cfg.OrganizationName,
 		Description:        "F&B loyalty stamp card",
-		LogoText:           member.BrandName,
 		ForegroundColor:    "rgb(255, 255, 255)",
-		BackgroundColor:    "rgb(36, 93, 82)",
-		LabelColor:         "rgb(214, 238, 228)",
+		BackgroundColor:    "rgb(84, 52, 245)",
+		LabelColor:         "rgb(225, 220, 255)",
 		Barcodes:           []Barcode{barcode},
 		Barcode:            &barcode,
 		StoreCard: &PassStructure{
@@ -86,7 +86,7 @@ func NewStampCardPass(cfg TemplateConfig, member StampCardMember) Pass {
 				{Key: "stamps", Label: "Stamps", Value: stampProgress(member.StampCount, member.StampGoal)},
 			},
 			PrimaryFields: []Field{
-				{Key: "reward", Label: "Reward", Value: member.RewardName},
+				{Key: "loyalty_program", Label: "10 STAMPS UNTIL NEXT REWARD", Value: loyaltyProgram},
 			},
 			SecondaryFields: []Field{
 				{Key: "member", Label: "Member", Value: member.FullName},
@@ -96,13 +96,14 @@ func NewStampCardPass(cfg TemplateConfig, member StampCardMember) Pass {
 			},
 			BackFields: []Field{
 				{Key: "member_id", Label: "Member ID", Value: member.ID},
-				{Key: "support", Label: "Support", Value: "Contact hello@dailybrew.example for loyalty card assistance."},
+				{Key: "support", Label: "Support", Value: "Contact the merchant for loyalty card assistance."},
 				{Key: "terms", Label: "Terms", Value: "Collect one stamp for each eligible purchase. Rewards are subject to outlet terms."},
 			},
 		},
 		UserInfo: map[string]string{
-			"memberID":   member.ID,
-			"stampCount": stampProgress(member.StampCount, member.StampGoal),
+			"memberID":       member.ID,
+			"loyaltyProgram": loyaltyProgram,
+			"stampCount":     stampProgress(member.StampCount, member.StampGoal),
 		},
 	}
 
@@ -112,6 +113,16 @@ func NewStampCardPass(cfg TemplateConfig, member StampCardMember) Pass {
 	}
 
 	return pass
+}
+
+func loyaltyProgramName(member StampCardMember) string {
+	if member.RewardName != "" {
+		return member.RewardName
+	}
+	if member.BrandName == "" {
+		return "Loyalty Program"
+	}
+	return fmt.Sprintf("%s Loyalty Program", member.BrandName)
 }
 
 func stampProgress(count int, goal int) string {

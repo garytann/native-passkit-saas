@@ -86,8 +86,8 @@ func writePassFiles(dir string, pass Pass) error {
 	}
 
 	assets := map[string]imageSpec{
-		"icon.png":    {29, 29, color.RGBA{28, 83, 126, 255}},
-		"icon@2x.png": {58, 58, color.RGBA{28, 83, 126, 255}},
+		"icon.png":    {29, 29, color.RGBA{84, 52, 245, 255}},
+		"icon@2x.png": {58, 58, color.RGBA{84, 52, 245, 255}},
 		"logo.png":    {160, 50, color.RGBA{255, 255, 255, 255}},
 		"logo@2x.png": {320, 100, color.RGBA{255, 255, 255, 255}},
 	}

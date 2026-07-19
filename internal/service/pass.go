@@ -25,15 +25,9 @@ type PassPreview struct {
 	Pass       applepass.Pass
 	Member     applepass.StampCardMember
 	Barcode    applepass.Barcode
-	Stamps     []StampPreview
 	PassURL    string
 	PreviewURL string
 	QRCodeURL  string
-}
-
-type StampPreview struct {
-	Number int
-	Filled bool
 }
 
 func NewPassService(cfg config.Config, repo MemberRepository, linker PassLinker) PassService {
@@ -89,7 +83,6 @@ func (s PassService) Preview(ctx context.Context, memberID string) (PassPreview,
 		Pass:       pass,
 		Member:     member,
 		Barcode:    barcode,
-		Stamps:     StampPreviews(member.StampCount, member.StampGoal),
 		PassURL:    s.linker.PassURL(memberID),
 		PreviewURL: s.linker.PreviewURL(memberID),
 		QRCodeURL:  s.linker.QRCodeURL(memberID),
@@ -139,26 +132,11 @@ func (s PassService) stampCardPass(member applepass.StampCardMember) applepass.P
 	}, member)
 }
 
-func StampPreviews(count int, goal int) []StampPreview {
-	if goal < 0 {
-		goal = 0
-	}
-	stamps := make([]StampPreview, 0, goal)
-	for i := 1; i <= goal; i++ {
-		stamps = append(stamps, StampPreview{
-			Number: i,
-			Filled: i <= count,
-		})
-	}
-	return stamps
-}
-
 func storeMemberToStampCard(member domain.StoreMember) applepass.StampCardMember {
 	return applepass.StampCardMember{
 		ID:         member.MemberID,
 		FullName:   member.CustomerName,
 		BrandName:  member.Merchant,
-		RewardName: "Free Coffee",
 		StampCount: member.StampProgress,
 		StampGoal:  10,
 		BarcodeID:  "stamp-card:" + member.MemberID,
@@ -170,7 +148,6 @@ func sampleStampCardMember(memberID string) applepass.StampCardMember {
 		ID:         memberID,
 		FullName:   "Taylor Example",
 		BrandName:  "Daily Brew",
-		RewardName: "Free Coffee",
 		StampCount: 6,
 		StampGoal:  10,
 		BarcodeID:  "stamp-card:" + memberID,

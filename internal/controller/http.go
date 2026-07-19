@@ -482,10 +482,12 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
       padding: 22px 24px 12px;
       align-items: start;
     }
-    .brand {
-      font-weight: 700;
-      font-size: 17px;
-      line-height: 1.2;
+    .logo {
+      width: 160px;
+      height: 50px;
+      border-radius: 0;
+      background: #fff;
+      flex: 0 1 52%;
     }
     .header-field {
       text-align: right;
@@ -516,36 +518,6 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
       grid-template-columns: 1fr 1fr;
       gap: 18px;
       padding: 0 24px 20px;
-    }
-    .stamp-board {
-      margin: 0 24px 24px;
-      padding: 16px;
-      background: rgba(255, 255, 255, .14);
-      border: 1px solid rgba(255, 255, 255, .22);
-      border-radius: 14px;
-    }
-    .stamp-grid {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 10px;
-      margin-top: 10px;
-    }
-    .stamp {
-      aspect-ratio: 1;
-      border-radius: 999px;
-      display: grid;
-      place-items: center;
-      font-size: 13px;
-      font-weight: 800;
-      border: 2px solid rgba(255, 255, 255, .72);
-      color: rgba(255, 255, 255, .82);
-      background: rgba(255, 255, 255, .08);
-    }
-    .stamp.filled {
-      background: #f6c860;
-      border-color: #f6c860;
-      color: #245d52;
-      box-shadow: 0 6px 14px rgba(0, 0, 0, .16);
     }
     .barcode {
       background: #fff;
@@ -582,7 +554,7 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
   <main>
     <section class="pass" aria-label="Apple Wallet pass preview">
       <div class="top">
-        <div class="brand">{{.Pass.LogoText}}</div>
+        <div class="logo" aria-label="Merchant logo placeholder"></div>
         {{with index .Pass.StoreCard.HeaderFields 0}}
         <div class="header-field">
           <div class="label">{{.Label}}</div>
@@ -609,14 +581,6 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
           <div class="value">{{.Value}}</div>
         </div>
         {{end}}
-      </div>
-      <div class="stamp-board">
-        <div class="label">{{.Member.StampCount}} of {{.Member.StampGoal}} stamps collected</div>
-        <div class="stamp-grid" aria-label="Stamp progress">
-          {{range .Stamps}}
-          <div class="stamp{{if .Filled}} filled{{end}}">{{.Number}}</div>
-          {{end}}
-        </div>
       </div>
       <div class="barcode">
         <img class="qr" src="{{.QRCodeURL}}" alt="QR code for {{.Barcode.AltText}}">
