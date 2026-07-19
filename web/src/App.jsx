@@ -14,8 +14,6 @@ import {
   Mail,
   Megaphone,
   Menu,
-  PanelLeftClose,
-  PanelLeftOpen,
   Plus,
   QrCode,
   Search,
@@ -25,6 +23,7 @@ import {
   UserPlus,
   Users,
   WalletCards,
+  X,
 } from "lucide-react";
 import { API_BASE, API_VERSION_PREFIX, DEFAULT_MERCHANT, MERCHANT_SESSION_KEY } from "./config/api";
 
@@ -51,7 +50,7 @@ const trendLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export default function App() {
   const [session, setSession] = useState(null);
   const [activeView, setActiveView] = useState("dashboard");
-  const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [customerTab, setCustomerTab] = useState("members");
   const [registration, setRegistration] = useState({
     name: "Taylor Example",
@@ -185,20 +184,22 @@ export default function App() {
   }
 
   return (
-    <div className={`app-shell ${sidebarExpanded ? "sidebar-open" : ""}`}>
+    <div className={`app-shell ${mobileNavOpen ? "mobile-nav-open" : ""}`}>
       <Sidebar
         activeView={activeView}
-        expanded={sidebarExpanded}
-        onToggle={() => setSidebarExpanded((value) => !value)}
+        mobileOpen={mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
         onNavigate={(key) => {
           if (key) {
             setActiveView(key);
+            setMobileNavOpen(false);
           }
         }}
       />
+      {mobileNavOpen ? <button className="mobile-nav-backdrop" type="button" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} /> : null}
 
       <main className="workspace">
-        <Topbar activeView={activeView} onNavigate={setActiveView} session={session} onLogout={logout} />
+        <Topbar activeView={activeView} onNavigate={setActiveView} session={session} onLogout={logout} onOpenMenu={() => setMobileNavOpen(true)} />
 
         {activeView === "customers" ? (
           <CustomersContent
@@ -225,24 +226,23 @@ export default function App() {
   );
 }
 
-function Sidebar({ activeView, expanded, onToggle, onNavigate }) {
+function Sidebar({ activeView, mobileOpen, onClose, onNavigate }) {
   return (
-    <aside className={`sidebar ${expanded ? "expanded" : ""}`} aria-label="Main navigation">
+    <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`} aria-label="Main navigation">
       <div className="sidebar-header">
         <div className="brand-mark">
           <Coffee size={23} strokeWidth={2.2} />
         </div>
-        {expanded ? <strong>Pass Console</strong> : null}
+        <strong>Pass Console</strong>
       </div>
       <button
-        className="nav-item sidebar-toggle"
+        className="icon-button sidebar-close"
         type="button"
-        onClick={onToggle}
-        aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
-        title={expanded ? "Collapse sidebar" : "Expand sidebar"}
+        onClick={onClose}
+        aria-label="Close navigation"
+        title="Close navigation"
       >
-        {expanded ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}
-        {expanded ? <span>Collapse</span> : null}
+        <X size={20} />
       </button>
       <nav className="icon-nav">
         {navItems.map((item) => (
@@ -255,21 +255,24 @@ function Sidebar({ activeView, expanded, onToggle, onNavigate }) {
             onClick={() => onNavigate(item.key)}
           >
             <item.icon size={20} />
-            {expanded ? <span>{item.label}</span> : null}
+            <span>{item.label}</span>
           </button>
         ))}
       </nav>
       <button className="nav-item support" aria-label="Help" title="Help" type="button">
         <CircleHelp size={20} />
-        {expanded ? <span>Help</span> : null}
+        <span>Help</span>
       </button>
     </aside>
   );
 }
 
-function Topbar({ activeView, onNavigate, session, onLogout }) {
+function Topbar({ activeView, onNavigate, session, onLogout, onOpenMenu }) {
   return (
     <header className="topbar">
+      <button className="round-control mobile-menu-button" type="button" onClick={onOpenMenu} aria-label="Open navigation" title="Open navigation">
+        <Menu size={19} />
+      </button>
       <div className="top-tabs">
         <button className={`tab ${activeView === "dashboard" ? "active" : ""}`} onClick={() => onNavigate("dashboard")}>
           <Gauge size={17} />
@@ -300,7 +303,7 @@ function Topbar({ activeView, onNavigate, session, onLogout }) {
         <button className="round-control" aria-label="Messages" title="Messages">
           <Mail size={18} />
         </button>
-        <button className="pill-control" type="button" onClick={onLogout}>
+        <button className="pill-control logout-action" type="button" onClick={onLogout}>
           Logout
         </button>
         <div className="avatar" aria-label="Admin profile">{merchantInitials(session?.merchant)}</div>
@@ -548,12 +551,12 @@ function MembersTable({ members, status, error }) {
           <tbody>
             {members.map((member) => (
               <tr key={member.member_id}>
-                <td>{member.member_id}</td>
-                <td>{member.customer_name}</td>
-                <td>{member.customer_email}</td>
-                <td>{member.stamp_progress} / 10</td>
-                <td><span className="status-pill">{member.status}</span></td>
-                <td>{formatDate(member.creation_date)}</td>
+                <td data-label="Customer ID">{member.member_id}</td>
+                <td data-label="Name">{member.customer_name}</td>
+                <td data-label="Email">{member.customer_email}</td>
+                <td data-label="Stamp progress">{member.stamp_progress} / 10</td>
+                <td data-label="Status"><span className="status-pill">{member.status}</span></td>
+                <td data-label="Joined">{formatDate(member.creation_date)}</td>
               </tr>
             ))}
             {status !== "loading" && members.length === 0 ? (
