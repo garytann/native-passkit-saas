@@ -182,6 +182,13 @@ docker compose down -v
 docker compose up --build
 ```
 
+If the database volume already existed before `POSTGRES_DB=passkit_wip` was set, Postgres will not create the database again. For a local POC where you can discard data, `docker compose down -v` is the cleanest fix. To preserve the existing volume, create the database and run the mounted migrations manually:
+
+```sh
+docker compose exec db sh -lc 'createdb -U "$POSTGRES_USER" "$POSTGRES_DB" || true'
+docker compose exec db sh -lc 'for file in /docker-entrypoint-initdb.d/*.sql; do psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f "$file"; done'
+```
+
 The backend container mounts `./certs` read-only at `/app/certs`, so your Apple Wallet certificate paths can stay as:
 
 ```text
