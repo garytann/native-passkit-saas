@@ -44,8 +44,7 @@ const customerTabs = [
   { key: "engagement", label: "Customer Engagement", icon: Megaphone },
 ];
 
-const activityBars = [42, 56, 48, 68, 86, 72, 80];
-const trendLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const STAMP_GOAL = 10;
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -219,7 +218,7 @@ export default function App() {
             onUpdateStamps={updateMemberStamps}
           />
         ) : (
-          <DashboardContent />
+          <DashboardContent members={members} membersStatus={membersStatus} membersError={membersError} />
         )}
       </main>
     </div>
@@ -347,24 +346,102 @@ function PageHeading({ current, title, actionLabel = "New Campaign" }) {
   );
 }
 
-function DashboardContent() {
+function DashboardContent({ members, membersStatus, membersError }) {
+  const insights = dashboardInsights(members);
+
   return (
     <>
       <PageHeading current="Dashboard" title="Pass Management Console" />
 
       <section className="metrics-grid" aria-label="Dashboard summary">
-        <MetricCard label="Total passes issued" value="1,284" delta="+12.8%" icon={WalletCards} />
-        <MetricCard label="Active customers" value="842" delta="+8.4%" icon={Users} />
-        <MetricCard label="Rewards redeemed" value="126" delta="+5.1%" icon={Sparkles} />
-        <MetricCard label="Scan events" value="3,918" delta="+18.2%" icon={QrCode} />
+        <MetricCard label="Total passes issued" value={formatNumber(insights.totalPasses)} delta="Merchant members" icon={WalletCards} />
+        <MetricCard label="Active customers" value={formatNumber(insights.activeCustomers)} delta={formatShare(insights.activeCustomers, insights.totalPasses)} icon={Users} />
+        <MetricCard label="Reward ready" value={formatNumber(insights.rewardReady)} delta={formatShare(insights.rewardReady, insights.totalPasses)} icon={Sparkles} />
+        <MetricCard label="Average stamp progress" value={`${insights.averageStampProgress} / ${STAMP_GOAL}`} delta="Across active records" icon={QrCode} />
       </section>
 
       <section className="dashboard-grid">
-        <ActivityPanel />
-        <ConsumerPanel />
+        <ActivityPanel trend={insights.registrationTrend} status={membersStatus} error={membersError} />
+        <ConsumerPanel segments={insights.statusSegments} totalMembers={insights.totalPasses} activeShare={insights.activeShare} status={membersStatus} error={membersError} />
       </section>
     </>
   );
+}
+
+function dashboardInsights(members) {
+  const totalPasses = members.length;
+  const activeCustomers = members.filter((member) => member.status === "active").length;
+  const rewardReady = members.filter((member) => member.status === "reward_ready" || Number(member.stamp_progress) >= STAMP_GOAL).length;
+  const activeInProgress = members.filter((member) => member.status === "active" && Number(member.stamp_progress) < STAMP_GOAL).length;
+  const totalStampProgress = members.reduce((sum, member) => sum + Number(member.stamp_progress || 0), 0);
+  const averageStampProgress = totalPasses === 0 ? 0 : Math.round((totalStampProgress / totalPasses) * 10) / 10;
+  const statusSegments = [
+    { label: "Active", value: activeInProgress },
+    { label: "Reward ready", value: rewardReady },
+    { label: "Other", value: Math.max(totalPasses - activeInProgress - rewardReady, 0) },
+  ];
+
+  return {
+    totalPasses,
+    activeCustomers,
+    rewardReady,
+    averageStampProgress,
+    registrationTrend: registrationTrend(members),
+    statusSegments,
+    activeShare: totalPasses === 0 ? 0 : Math.round((activeCustomers / totalPasses) * 100),
+  };
+}
+
+function registrationTrend(members) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - (6 - index));
+    return {
+      date,
+      label: date.toLocaleDateString(undefined, { weekday: "short" }),
+      value: 0,
+    };
+  });
+
+  members.forEach((member) => {
+    const createdAt = parseMemberDate(member.creation_date);
+    if (!createdAt) {
+      return;
+    }
+    createdAt.setHours(0, 0, 0, 0);
+    const day = days.find((item) => item.date.getTime() === createdAt.getTime());
+    if (day) {
+      day.value += 1;
+    }
+  });
+
+  const maxValue = Math.max(...days.map((day) => day.value), 1);
+  return days.map((day) => ({
+    ...day,
+    height: Math.max((day.value / maxValue) * 100, day.value > 0 ? 12 : 0),
+  }));
+}
+
+function parseMemberDate(value) {
+  if (!value) {
+    return null;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatNumber(value) {
+  return new Intl.NumberFormat().format(value);
+}
+
+function formatShare(value, total) {
+  if (total === 0) {
+    return "No records yet";
+  }
+  return `${Math.round((value / total) * 100)}% of members`;
 }
 
 function CustomersContent(props) {
@@ -806,47 +883,66 @@ function CustomerEngagement() {
   );
 }
 
-function ActivityPanel() {
+function ActivityPanel({ trend, status, error }) {
+  const hasTrend = trend.some((day) => day.value > 0);
+
   return (
     <article className="activity-panel">
       <div className="panel-heading tight">
         <div>
           <span className="eyebrow">Activity</span>
-          <h2>Consumer trends</h2>
+          <h2>Customer registrations</h2>
         </div>
         <button className="round-control small" aria-label="Activity filters" title="Activity filters">
           <Activity size={16} />
         </button>
       </div>
-      <div className="bars" aria-label="Weekly activity trend">
-        {activityBars.map((height, index) => (
-          <div className="bar-column" key={trendLabels[index]}>
-            <span style={{ height: `${height}%` }} className={index === 4 ? "highlight" : ""} />
-            <em>{trendLabels[index]}</em>
-          </div>
-        ))}
-      </div>
+      {status === "loading" ? <p className="panel-state">Loading registrations</p> : null}
+      {error ? <p className="panel-state error">{error}</p> : null}
+      {status !== "loading" && !error && hasTrend ? (
+        <div className="bars" aria-label="Last seven days customer registrations">
+          {trend.map((day) => (
+            <div className="bar-column" key={day.date.toISOString()}>
+              <span style={{ height: `${day.height}%` }} className={day.value > 0 ? "highlight" : ""} />
+              <strong>{day.value}</strong>
+              <em>{day.label}</em>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {status !== "loading" && !error && !hasTrend ? (
+        <p className="panel-state">No customer registrations in the last 7 days.</p>
+      ) : null}
     </article>
   );
 }
 
-function ConsumerPanel() {
+function ConsumerPanel({ segments, totalMembers, activeShare, status, error }) {
   return (
     <article className="consumer-panel">
       <div className="panel-heading tight">
         <div>
           <span className="eyebrow">Segments</span>
-          <h2>Consumer activity</h2>
+          <h2>Customer status mix</h2>
         </div>
       </div>
-      <div className="donut" aria-label="Consumer segment split">
-        <span>68%</span>
-      </div>
-      <div className="segment-stats">
-        <span><strong>480</strong> New</span>
-        <span><strong>312</strong> Returning</span>
-        <span><strong>50</strong> Dormant</span>
-      </div>
+      {status === "loading" ? <p className="panel-state">Loading customers</p> : null}
+      {error ? <p className="panel-state error">{error}</p> : null}
+      {status !== "loading" && !error && totalMembers > 0 ? (
+        <>
+          <div className="donut" aria-label="Active customer share" style={{ "--active-share": `${activeShare * 3.6}deg` }}>
+            <span>{activeShare}%</span>
+          </div>
+          <div className="segment-stats">
+            {segments.map((segment) => (
+              <span key={segment.label}><strong>{formatNumber(segment.value)}</strong> {segment.label}</span>
+            ))}
+          </div>
+        </>
+      ) : null}
+      {status !== "loading" && !error && totalMembers === 0 ? (
+        <p className="panel-state">No customer records available yet.</p>
+      ) : null}
     </article>
   );
 }
