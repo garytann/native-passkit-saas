@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import jsQR from "jsqr";
 import {
   Activity,
   Bell,
@@ -669,6 +670,9 @@ function StampScanner({ onUpdateStamps }) {
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const scanTimerRef = useRef(null);
+  const detectorRef = useRef(null);
+  const detectInProgressRef = useRef(false);
+  const stampUpdateInProgressRef = useRef(false);
   const [memberID, setMemberID] = useState("");
   const [cameraStatus, setCameraStatus] = useState("idle");
   const [status, setStatus] = useState("idle");
@@ -681,15 +685,21 @@ function StampScanner({ onUpdateStamps }) {
 
   async function startCamera() {
     setMessage("");
-    if (!("BarcodeDetector" in window)) {
-      setCameraStatus("unsupported");
-      setMessage("Camera scanning is not supported by this browser. Use manual member ID entry below.");
+    setStatus("idle");
+    setCameraStatus("idle");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraStatus("error");
+      setMessage("Camera access is not available in this browser. Use HTTPS on your phone, or enter the member ID manually.");
       return;
     }
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
         audio: false,
       });
       streamRef.current = stream;
@@ -698,10 +708,12 @@ function StampScanner({ onUpdateStamps }) {
         await videoRef.current.play();
       }
       setCameraStatus("scanning");
+      setMessage("Point the camera at the customer's Apple Wallet QR code.");
       scanTimerRef.current = window.setInterval(scanFrame, 700);
+      await scanFrame();
     } catch (err) {
       setCameraStatus("error");
-      setMessage(err instanceof Error ? err.message : "Unable to start camera");
+      setMessage(cameraErrorMessage(err));
     }
   }
 
@@ -723,43 +735,58 @@ function StampScanner({ onUpdateStamps }) {
   async function scanFrame() {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas || video.readyState < 2 || !("BarcodeDetector" in window)) {
+    if (!video || !canvas || video.readyState < 2 || detectInProgressRef.current || stampUpdateInProgressRef.current) {
       return;
     }
 
-    const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    detectInProgressRef.current = true;
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    const context = canvas.getContext("2d");
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) {
+      detectInProgressRef.current = false;
+      return;
+    }
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     try {
-      const codes = await detector.detect(canvas);
-      if (codes.length === 0) {
+      const rawValue = await readQRCode(canvas, context);
+      if (!rawValue) {
         return;
       }
-      const scannedID = memberIDFromQRCode(codes[0].rawValue);
+      const scannedID = memberIDFromQRCode(rawValue);
       if (scannedID) {
         setMemberID(scannedID);
-        setMessage(`Scanned ${scannedID}`);
+        stopCamera();
+        await updateStampForMember(scannedID, "scan");
       } else {
         setMessage("QR code scanned, but no member ID was found.");
       }
     } catch {
       setMessage("Unable to read this camera frame.");
+    } finally {
+      detectInProgressRef.current = false;
     }
   }
 
   async function addStamp(event) {
     event.preventDefault();
-    const safeMemberID = memberID.trim();
+    await updateStampForMember(memberID, "manual");
+  }
+
+  async function updateStampForMember(value, source) {
+    const safeMemberID = normalizeMemberIDInput(value);
     if (!safeMemberID) {
       setMessage("Scan or enter a member ID first.");
       return;
     }
+    if (stampUpdateInProgressRef.current) {
+      return;
+    }
 
+    stampUpdateInProgressRef.current = true;
     setStatus("loading");
-    setMessage("");
+    setMessage(source === "scan" ? `Scanned ${safeMemberID}. Updating stamp progress...` : "");
     try {
       const result = await onUpdateStamps(safeMemberID, 1);
       setLastUpdate(result);
@@ -768,7 +795,29 @@ function StampScanner({ onUpdateStamps }) {
     } catch (err) {
       setStatus("error");
       setMessage(err instanceof Error ? err.message : "Unable to update stamp progress");
+    } finally {
+      stampUpdateInProgressRef.current = false;
     }
+  }
+
+  async function readQRCode(canvas, context) {
+    if ("BarcodeDetector" in window) {
+      try {
+        detectorRef.current ??= new window.BarcodeDetector({ formats: ["qr_code"] });
+        const codes = await detectorRef.current.detect(canvas);
+        if (codes.length > 0) {
+          return codes[0].rawValue;
+        }
+      } catch {
+        detectorRef.current = null;
+      }
+    }
+
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const result = jsQR(imageData.data, imageData.width, imageData.height, {
+      inversionAttempts: "attemptBoth",
+    });
+    return result?.data ?? "";
   }
 
   return (
@@ -782,7 +831,7 @@ function StampScanner({ onUpdateStamps }) {
             </div>
           </div>
           <div className="camera-frame">
-            <video ref={videoRef} muted playsInline />
+            <video ref={videoRef} autoPlay muted playsInline />
             <canvas ref={canvasRef} hidden />
             {cameraStatus !== "scanning" ? (
               <div className="camera-placeholder">
@@ -820,7 +869,7 @@ function StampScanner({ onUpdateStamps }) {
             <Plus size={18} />
             {status === "loading" ? "Adding Stamp" : "Add Stamp"}
           </button>
-          {message ? <p className={`scanner-message ${status === "error" ? "error" : ""}`}>{message}</p> : null}
+          {message ? <p className={`scanner-message ${status === "error" || (cameraStatus === "error" && status !== "ready") ? "error" : ""}`}>{message}</p> : null}
           {lastUpdate ? (
             <div className="stamp-result">
               <span>{lastUpdate.member.member_id}</span>
@@ -846,6 +895,25 @@ function memberIDFromQRCode(value) {
 
 function normalizeMemberIDInput(value) {
   return String(value ?? "").trim().toUpperCase();
+}
+
+function cameraErrorMessage(err) {
+  if (!(err instanceof Error)) {
+    return "Unable to start camera.";
+  }
+  if (err.name === "NotAllowedError") {
+    return "Camera permission was denied. Allow camera access in the browser and try again.";
+  }
+  if (err.name === "NotFoundError") {
+    return "No camera was found on this device.";
+  }
+  if (err.name === "NotReadableError") {
+    return "The camera is already in use by another app or browser tab.";
+  }
+  if (window.location.protocol !== "https:" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+    return "Camera access requires HTTPS on mobile browsers. Open the UAT site over HTTPS and try again.";
+  }
+  return err.message || "Unable to start camera.";
 }
 
 function formatDate(value) {
