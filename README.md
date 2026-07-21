@@ -90,7 +90,37 @@ Put local PEM files in `certs/`. Do not commit real certificates or private keys
 
 This project uses Postgres for member registration. The Go database layer uses GORM with the Postgres driver to build and execute SQL.
 
-The backend does not create the database and does not run schema migrations during server startup. It only opens the configured `DATABASE_URL` and pings the database. This keeps database lifecycle concerns outside the application process.
+The backend does not create the database and does not run schema migrations during server startup. It only opens the configured `DATABASE_URL` and pings the database. This keeps database lifecycle concerns outside the application process, which is the safer model for UAT and production.
+
+For Docker deployments, database lifecycle is split into explicit one-off jobs:
+
+- `db` starts Postgres and checks the admin database only.
+- `db-init` creates the application database once if it does not already exist.
+- `db-migrate` applies SQL files from `migrations/` to the application database.
+
+Run these once when provisioning a new UAT/prod environment:
+
+```sh
+docker compose up -d db
+docker compose --profile db-admin run --rm db-init
+docker compose --profile db-admin run --rm db-migrate
+docker compose up -d --build
+```
+
+For normal application deploys after the database already exists:
+
+```sh
+docker compose up -d --build
+```
+
+When a future release includes schema changes, run the migration job deliberately during the deployment:
+
+```sh
+docker compose --profile db-admin run --rm db-migrate
+docker compose up -d --build
+```
+
+Do not use `docker compose down -v` in UAT/prod unless you intentionally want to destroy database data.
 
 For local development without Docker, create the database first and apply the SQL migrations manually:
 
@@ -144,7 +174,7 @@ cp .env.example .env
 
 This starts:
 
-- `db` - Postgres 16, with database `passkit_wip`.
+- `db` - Postgres 16, with a persistent named volume.
 - `backend` - Go API inside the Compose network.
 - `web` - React admin console inside the Compose network.
 - `proxy` - Nginx reverse proxy on HTTP and HTTPS.
@@ -173,20 +203,17 @@ proxy/certs/privkey.pem
 
 Make sure Docker Desktop is running before starting Compose. If you already have a local Postgres using port `5432`, either stop that local instance or change `POSTGRES_HOST_PORT` in `.env`. If ports `80` or `443` are already used locally, change `PROXY_HOST_PORT` or `PROXY_HTTPS_HOST_PORT` in `.env` and update `PUBLIC_BASE_URL` to match.
 
-For Compose, the backend container gets its `DATABASE_URL` from `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`, using the internal Docker hostname `db`. The `DATABASE_URL` field in `.env` is kept for the separate case where you run the backend directly from your host with `go run ./cmd/server`.
+For Compose, the backend container gets its `DATABASE_URL` from `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `APP_DATABASE_NAME`, using the internal Docker hostname `db`. The `DATABASE_URL` field in `.env` is kept for the separate case where you run the backend directly from your host with `go run ./cmd/server`.
 
-Postgres runs the files in `migrations/` through `/docker-entrypoint-initdb.d` when the database volume is created for the first time. If you change an initialization migration and want a fresh local database, reset the Compose volume:
+`POSTGRES_ADMIN_DB` is the database used by the Postgres container healthcheck and admin commands. `APP_DATABASE_NAME` is the application database. Keeping them separate prevents rebuilds from depending on Postgres first-run initialization behavior.
 
-```sh
-docker compose down -v
-docker compose up --build
-```
-
-If the database volume already existed before `POSTGRES_DB=passkit_wip` was set, Postgres will not create the database again. For a local POC where you can discard data, `docker compose down -v` is the cleanest fix. To preserve the existing volume, create the database and run the mounted migrations manually:
+If an existing UAT/prod volume is missing the application database, preserve the volume and run:
 
 ```sh
-docker compose exec db sh -lc 'createdb -U "$POSTGRES_USER" "$POSTGRES_DB" || true'
-docker compose exec db sh -lc 'for file in /docker-entrypoint-initdb.d/*.sql; do psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f "$file"; done'
+docker compose up -d db
+docker compose --profile db-admin run --rm db-init
+docker compose --profile db-admin run --rm db-migrate
+docker compose up -d --build
 ```
 
 The backend container mounts `./certs` read-only at `/app/certs`, so your Apple Wallet certificate paths can stay as:
