@@ -43,6 +43,13 @@ type CreateCampaignDeliveryInput struct {
 	Status     string
 }
 
+type UpdateCampaignDeliveryStatusInput struct {
+	DeliveryID  string
+	Status      string
+	DeliveredAt *time.Time
+	LastError   string
+}
+
 func NewReadableCampaignID() (string, error) {
 	return newReadableID("CMP-")
 }

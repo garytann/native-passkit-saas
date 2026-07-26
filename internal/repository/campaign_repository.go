@@ -125,6 +125,32 @@ func (r CampaignRepository) CreateDeliveries(ctx context.Context, inputs []domai
 	return deliveries, nil
 }
 
+func (r CampaignRepository) UpdateDeliveryStatus(ctx context.Context, input domain.UpdateCampaignDeliveryStatusInput) (domain.CampaignDelivery, error) {
+	updates := map[string]any{
+		"status":     input.Status,
+		"last_error": input.LastError,
+	}
+	if input.DeliveredAt != nil {
+		updates["delivered_at"] = input.DeliveredAt
+	}
+
+	var row campaignDeliveryModel
+	if err := r.db.WithContext(ctx).
+		Model(&campaignDeliveryModel{}).
+		Where("delivery_id = ?", input.DeliveryID).
+		Updates(updates).Error; err != nil {
+		return domain.CampaignDelivery{}, fmt.Errorf("update campaign delivery status: %w", err)
+	}
+
+	if err := r.db.WithContext(ctx).
+		Where("delivery_id = ?", input.DeliveryID).
+		First(&row).Error; err != nil {
+		return domain.CampaignDelivery{}, fmt.Errorf("load updated campaign delivery: %w", err)
+	}
+
+	return campaignDeliveryFromModel(row), nil
+}
+
 func (r CampaignRepository) ActiveDeliveryForMember(ctx context.Context, memberID string) (domain.CampaignDelivery, error) {
 	var row campaignDeliveryModel
 	if err := r.db.WithContext(ctx).

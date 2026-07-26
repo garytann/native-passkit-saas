@@ -23,6 +23,7 @@ type CampaignRepository interface {
 
 type WalletRegistrationRepository interface {
 	service.WalletRegistrationRepository
+	service.CampaignWalletRegistrationRepository
 }
 
 type WalletPassRepository interface {
@@ -63,7 +64,8 @@ func (s Server) Routes() http.Handler {
 	merchantService := service.NewMerchantService(s.merchantRepo, tokenManager)
 	passService := service.NewPassServiceWithWalletPassesAndCampaigns(s.cfg, s.memberRepo, s.walletPassRepo, s.campaignRepo, linker)
 	walletService := service.NewWalletService(s.walletRegistrationRepo)
-	campaignService := service.NewCampaignService(s.campaignRepo, s.memberRepo, passService)
+	apnsSender := service.NewAPNSPassUpdateSender(s.cfg)
+	campaignService := service.NewCampaignServiceWithPush(s.campaignRepo, s.memberRepo, passService, s.walletRegistrationRepo, apnsSender)
 
 	healthController := controller.HealthController{}
 	customerController := controller.NewCustomerController(memberService, tokenManager, v1.Path("/public/merchants/"))

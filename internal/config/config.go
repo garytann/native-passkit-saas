@@ -18,6 +18,7 @@ type Config struct {
 	PassCertPath     string
 	PassKeyPath      string
 	WWDRCertPath     string
+	APNSEndpoint     string
 	OpenSSLBin       string
 }
 
@@ -36,6 +37,7 @@ func Load() Config {
 		PassCertPath:     env("APPLE_PASS_CERT_PATH", "certs/pass-cert.pem"),
 		PassKeyPath:      env("APPLE_PASS_KEY_PATH", "certs/pass-key.pem"),
 		WWDRCertPath:     env("APPLE_WWDR_CERT_PATH", "certs/wwdr.pem"),
+		APNSEndpoint:     env("APPLE_APNS_ENDPOINT", "https://api.push.apple.com"),
 		OpenSSLBin:       env("OPENSSL_BIN", "openssl"),
 	}
 }
