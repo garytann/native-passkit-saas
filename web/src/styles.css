@@ -18,7 +18,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -298,7 +299,11 @@ h2 {
 .activity-panel,
 .consumer-panel,
 .customer-shell,
-.engagement-panel {
+.engagement-panel,
+.campaign-shell,
+.campaign-form-panel,
+.campaign-summary-panel,
+.campaign-list-panel {
   background: rgba(255, 255, 255, .9);
   border: 1px solid rgba(226, 230, 238, .88);
   border-radius: 8px;
@@ -677,7 +682,19 @@ input {
   color: #17191f;
 }
 
-input:focus {
+textarea {
+  width: 100%;
+  min-height: 132px;
+  border-radius: 8px;
+  border: 1px solid #dde3ec;
+  background: #f8fafc;
+  padding: 13px 14px;
+  color: #17191f;
+  resize: vertical;
+}
+
+input:focus,
+textarea:focus {
   border-color: var(--brand-purple);
   outline: 3px solid var(--brand-purple-soft);
 }
@@ -813,6 +830,158 @@ input:focus {
   color: #626976;
   font-size: 13px;
   font-style: normal;
+}
+
+.campaign-shell {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.campaign-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 440px) minmax(280px, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.campaign-form-panel,
+.campaign-summary-panel,
+.campaign-list-panel {
+  padding: 22px;
+  box-shadow: none;
+}
+
+.campaign-form-panel {
+  display: grid;
+  align-content: start;
+  gap: 11px;
+}
+
+.campaign-form-panel label {
+  color: #707683;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.campaign-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: var(--brand-purple);
+  background: var(--brand-purple-soft);
+}
+
+.campaign-message {
+  color: #245d52;
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 700;
+}
+
+.campaign-message.error {
+  color: #bb3434;
+}
+
+.campaign-summary-panel {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  background:
+    linear-gradient(145deg, rgba(84, 52, 245, .1), rgba(255, 255, 255, .94) 46%),
+    #fff;
+}
+
+.campaign-summary-panel h3 {
+  margin: 0;
+  font-size: 32px;
+  line-height: 1.05;
+}
+
+.campaign-summary-panel p {
+  max-width: 620px;
+  color: #626976;
+  line-height: 1.6;
+}
+
+.campaign-summary-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.campaign-summary-stats span {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid #e4e9f1;
+  border-radius: 8px;
+  background: rgba(248, 250, 252, .72);
+  color: #707683;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.campaign-summary-stats strong {
+  color: #17191f;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.campaign-list {
+  display: grid;
+  gap: 10px;
+}
+
+.campaign-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, .42fr);
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #e4e9f1;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.campaign-card h3 {
+  margin: 12px 0 8px;
+  color: #17191f;
+  font-size: 18px;
+}
+
+.campaign-card p {
+  color: #626976;
+  line-height: 1.55;
+}
+
+.campaign-meta {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.campaign-meta div {
+  display: grid;
+  gap: 4px;
+}
+
+.campaign-meta dt {
+  color: #818895;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.campaign-meta dd {
+  margin: 0;
+  color: #2d3038;
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .auth-page {
@@ -1303,6 +1472,10 @@ input:focus {
   text-align: center;
 }
 
+.panel-state.compact {
+  min-height: 92px;
+}
+
 .panel-state.error {
   color: #bb3434;
 }
@@ -1323,6 +1496,7 @@ input:focus {
 
   .dashboard-grid,
   .generator-body,
+  .campaign-layout,
   .public-registration-layout,
   .auth-shell {
     grid-template-columns: 1fr;
@@ -1493,8 +1667,24 @@ input:focus {
   .generator-panel,
   .customer-shell,
   .scanner-panel,
-  .engagement-panel {
+  .engagement-panel,
+  .campaign-shell,
+  .campaign-form-panel,
+  .campaign-summary-panel,
+  .campaign-list-panel {
     padding: 16px;
+  }
+
+  .campaign-card {
+    grid-template-columns: 1fr;
+  }
+
+  .campaign-summary-panel h3 {
+    font-size: 28px;
+  }
+
+  .campaign-summary-stats {
+    grid-template-columns: 1fr;
   }
 
   .section-tabs {

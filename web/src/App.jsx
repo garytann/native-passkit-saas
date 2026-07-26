@@ -18,6 +18,7 @@ import {
   Plus,
   QrCode,
   Search,
+  Send,
   Settings,
   Sparkles,
   Ticket,
@@ -32,7 +33,7 @@ const navItems = [
   { label: "Dashboard", icon: Home, key: "dashboard" },
   { label: "Passes", icon: WalletCards },
   { label: "Customers", icon: Users, key: "customers" },
-  { label: "Campaigns", icon: Ticket },
+  { label: "Campaigns", icon: Ticket, key: "campaigns" },
   { label: "Analytics", icon: ChartNoAxesCombined },
   { label: "Integrations", icon: Layers3 },
   { label: "Settings", icon: Settings },
@@ -63,6 +64,15 @@ export default function App() {
   const [passLinks, setPassLinks] = useState(null);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
+  const [campaigns, setCampaigns] = useState([]);
+  const [campaignsStatus, setCampaignsStatus] = useState("idle");
+  const [campaignsError, setCampaignsError] = useState("");
+  const [campaignForm, setCampaignForm] = useState({
+    title: "",
+    message: "",
+  });
+  const [campaignCreateStatus, setCampaignCreateStatus] = useState("idle");
+  const [campaignCreateMessage, setCampaignCreateMessage] = useState("");
 
   useEffect(() => {
     const rawSession = window.localStorage.getItem(MERCHANT_SESSION_KEY);
@@ -94,6 +104,7 @@ export default function App() {
       return;
     }
     loadMembers(session.token);
+    loadCampaigns(session.token);
   }, [session]);
 
   const previewUrl = useMemo(() => {
@@ -148,6 +159,68 @@ export default function App() {
         window.localStorage.removeItem(MERCHANT_SESSION_KEY);
         window.location.href = "/login";
       }
+    }
+  }
+
+  async function loadCampaigns(token) {
+    if (!token) {
+      return;
+    }
+    setCampaignsStatus("loading");
+    setCampaignsError("");
+    try {
+      const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/campaigns`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error ?? `Campaigns endpoint returned ${response.status}`);
+      }
+      const data = await response.json();
+      setCampaigns(data.campaigns ?? []);
+      setCampaignsStatus("ready");
+    } catch (err) {
+      setCampaignsError(err instanceof Error ? err.message : "Unable to load campaigns");
+      setCampaignsStatus("error");
+      if (err instanceof Error && err.message === "unauthorized") {
+        window.localStorage.removeItem(MERCHANT_SESSION_KEY);
+        window.location.href = "/login";
+      }
+    }
+  }
+
+  async function createCampaign(event) {
+    event.preventDefault();
+    if (!session?.token) {
+      return;
+    }
+
+    setCampaignCreateStatus("loading");
+    setCampaignCreateMessage("");
+    try {
+      const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/campaigns`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(campaignForm),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error ?? `Campaign creation returned ${response.status}`);
+      }
+      const data = await response.json();
+      setCampaigns((current) => [data.campaign, ...current]);
+      setCampaignForm({ title: "", message: "" });
+      setCampaignCreateStatus("ready");
+      setCampaignCreateMessage(
+        `Queued ${data.delivery_count ?? 0} customers. Sent ${data.push_sent_count ?? 0} Wallet update pushes.`
+      );
+      await loadMembers(session.token);
+    } catch (err) {
+      setCampaignCreateStatus("error");
+      setCampaignCreateMessage(err instanceof Error ? err.message : "Unable to create campaign");
     }
   }
 
@@ -218,6 +291,18 @@ export default function App() {
             onRegister={registerMember}
             onUpdateStamps={updateMemberStamps}
           />
+        ) : activeView === "campaigns" ? (
+          <CampaignsContent
+            campaigns={campaigns}
+            status={campaignsStatus}
+            error={campaignsError}
+            form={campaignForm}
+            setForm={setCampaignForm}
+            createStatus={campaignCreateStatus}
+            createMessage={campaignCreateMessage}
+            members={members}
+            onCreate={createCampaign}
+          />
         ) : (
           <DashboardContent members={members} membersStatus={membersStatus} membersError={membersError} />
         )}
@@ -282,9 +367,9 @@ function Topbar({ activeView, onNavigate, session, onLogout, onOpenMenu }) {
           <Users size={17} />
           Customers
         </button>
-        <button className="tab">
-          <Activity size={17} />
-          Reports
+        <button className={`tab ${activeView === "campaigns" ? "active" : ""}`} onClick={() => onNavigate("campaigns")}>
+          <Ticket size={17} />
+          Campaigns
         </button>
       </div>
       <div className="top-actions">
@@ -607,6 +692,106 @@ function PassGenerator({ registration, setRegistration, previewUrl, passLinks, s
 function merchantSignupLink(merchant) {
   const slug = merchant?.merchant_slug || slugify(merchant?.merchant || DEFAULT_MERCHANT);
   return `${window.location.origin}/m/${encodeURIComponent(slug)}/join`;
+}
+
+function CampaignsContent({ campaigns, status, error, form, setForm, createStatus, createMessage, members, onCreate }) {
+  const activeMembers = members.filter((member) => member.status === "active").length;
+  const latestCampaign = campaigns[0];
+
+  function updateForm(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  return (
+    <>
+      <PageHeading current="Campaigns" title="Campaigns" actionLabel="Create Campaign" />
+
+      <section className="campaign-shell">
+        <div className="campaign-layout">
+          <form className="campaign-form-panel" onSubmit={onCreate}>
+            <div className="panel-heading tight">
+              <div>
+                <span className="eyebrow">Wallet push</span>
+                <h2>Create promotion</h2>
+              </div>
+              <div className="campaign-icon">
+                <Megaphone size={19} />
+              </div>
+            </div>
+            <label htmlFor="campaignTitle">Campaign title</label>
+            <input
+              id="campaignTitle"
+              placeholder="Double stamps weekend"
+              value={form.title}
+              onChange={(event) => updateForm("title", event.target.value)}
+              required
+            />
+            <label htmlFor="campaignMessage">Push message</label>
+            <textarea
+              id="campaignMessage"
+              placeholder="Earn double stamps this weekend when you visit any outlet."
+              value={form.message}
+              onChange={(event) => updateForm("message", event.target.value)}
+              rows={5}
+              required
+            />
+            <button className="primary-action" type="submit" disabled={createStatus === "loading"}>
+              <Send size={18} />
+              {createStatus === "loading" ? "Creating campaign" : "Create & Send Update"}
+            </button>
+            {createMessage ? <p className={`campaign-message ${createStatus === "error" ? "error" : ""}`}>{createMessage}</p> : null}
+          </form>
+
+          <aside className="campaign-summary-panel">
+            <span className="summary-kicker">Audience</span>
+            <h3>{formatNumber(activeMembers)} active customers</h3>
+            <p>
+              Campaigns target the logged-in merchant's customers. Customers with an Apple Wallet registration receive a pass update push; others remain queued until the pass is pulled again.
+            </p>
+            <div className="campaign-summary-stats">
+              <span><strong>{formatNumber(campaigns.length)}</strong> campaigns</span>
+              <span><strong>{latestCampaign ? formatDate(latestCampaign.creation_date) : "-"}</strong> latest</span>
+            </div>
+          </aside>
+        </div>
+
+        <div className="campaign-list-panel">
+          <div className="panel-heading tight">
+            <div>
+              <span className="eyebrow">History</span>
+              <h2>Recent campaigns</h2>
+            </div>
+          </div>
+          {status === "loading" ? <p className="panel-state compact">Loading campaigns</p> : null}
+          {error ? <p className="panel-state compact error">{error}</p> : null}
+          {status !== "loading" && !error && campaigns.length === 0 ? (
+            <p className="panel-state compact">No campaigns created yet.</p>
+          ) : null}
+          <div className="campaign-list">
+            {campaigns.map((campaign) => (
+              <article className="campaign-card" key={campaign.campaign_id}>
+                <div>
+                  <span className="status-pill">{campaign.status}</span>
+                  <h3>{campaign.title}</h3>
+                  <p>{campaign.message}</p>
+                </div>
+                <dl className="campaign-meta">
+                  <div>
+                    <dt>Campaign ID</dt>
+                    <dd>{campaign.campaign_id}</dd>
+                  </div>
+                  <div>
+                    <dt>Created</dt>
+                    <dd>{formatDate(campaign.creation_date)}</dd>
+                  </div>
+                </dl>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+    </>
+  );
 }
 
 function slugify(value) {
