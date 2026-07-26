@@ -298,14 +298,20 @@ func (c MerchantController) LoginMerchant(w http.ResponseWriter, r *http.Request
 
 type PassController struct {
 	passes     service.PassService
+	wallet     service.WalletService
 	pathPrefix string
 }
 
-func NewPassController(passes service.PassService, pathPrefix string) PassController {
+func NewPassController(passes service.PassService, wallet service.WalletService, pathPrefix string) PassController {
 	return PassController{
 		passes:     passes,
+		wallet:     wallet,
 		pathPrefix: pathPrefix,
 	}
+}
+
+type registerWalletPassRequest struct {
+	PushToken string `json:"pushToken"`
 }
 
 func (c PassController) Example(w http.ResponseWriter, _ *http.Request) {
@@ -313,6 +319,15 @@ func (c PassController) Example(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (c PassController) Routes(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, c.pathPrefix+"v1/") {
+		c.WalletWebService(w, r)
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
 	if _, ok := c.memberIDFromPreviewPath(r.URL.Path); ok {
 		c.Preview(w, r)
 		return
@@ -322,6 +337,119 @@ func (c PassController) Routes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.Package(w, r)
+}
+
+func (c PassController) WalletWebService(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == c.pathPrefix+"v1/log" && r.Method == http.MethodPost {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if params, ok := c.walletRegistrationPath(r.URL.Path); ok {
+		switch r.Method {
+		case http.MethodPost:
+			c.RegisterWalletPass(w, r, params)
+		case http.MethodDelete:
+			c.UnregisterWalletPass(w, r, params)
+		default:
+			w.Header().Set("Allow", "POST, DELETE")
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		}
+		return
+	}
+
+	if params, ok := c.walletUpdatedSerialsPath(r.URL.Path); ok {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", "GET")
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		c.UpdatedSerialNumbers(w, r, params)
+		return
+	}
+
+	if params, ok := c.walletPassPath(r.URL.Path); ok {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", "GET")
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		c.UpdatedPackage(w, r, params)
+		return
+	}
+
+	writeError(w, http.StatusNotFound, errRouteNotFound.Error())
+}
+
+func (c PassController) RegisterWalletPass(w http.ResponseWriter, r *http.Request, params walletPathParams) {
+	authorization := r.Header.Get("Authorization")
+	if err := c.passes.AuthorizePass(r.Context(), params.PassTypeIdentifier, params.SerialNumber, authorization); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	var request registerWalletPassRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request body")
+		return
+	}
+
+	created, err := c.wallet.RegisterPass(r.Context(), service.RegisterWalletPassInput{
+		DeviceLibraryIdentifier: params.DeviceLibraryIdentifier,
+		PassTypeIdentifier:      params.PassTypeIdentifier,
+		SerialNumber:            params.SerialNumber,
+		PushToken:               request.PushToken,
+		AuthenticationToken:     applePassAuthorizationToken(authorization),
+	})
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	if created {
+		w.WriteHeader(http.StatusCreated)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (c PassController) UnregisterWalletPass(w http.ResponseWriter, r *http.Request, params walletPathParams) {
+	if err := c.passes.AuthorizePass(r.Context(), params.PassTypeIdentifier, params.SerialNumber, r.Header.Get("Authorization")); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if err := c.wallet.UnregisterPass(r.Context(), params.DeviceLibraryIdentifier, params.PassTypeIdentifier, params.SerialNumber); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (c PassController) UpdatedSerialNumbers(w http.ResponseWriter, r *http.Request, params walletPathParams) {
+	result, err := c.wallet.UpdatedSerialNumbers(r.Context(), params.DeviceLibraryIdentifier, params.PassTypeIdentifier, r.URL.Query().Get("passesUpdatedSince"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if len(result.SerialNumbers) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (c PassController) UpdatedPackage(w http.ResponseWriter, r *http.Request, params walletPathParams) {
+	data, err := c.passes.AuthenticatedPackage(r.Context(), params.PassTypeIdentifier, params.SerialNumber, r.Header.Get("Authorization"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/vnd.apple.pkpass")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+params.SerialNumber+`.pkpass"`)
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 func (c PassController) Package(w http.ResponseWriter, r *http.Request) {
@@ -410,6 +538,57 @@ func (c PassController) memberIDFromQRCodePath(path string) (string, bool) {
 		return "", false
 	}
 	return trimRouteValue(path, c.pathPrefix, suffix), true
+}
+
+type walletPathParams struct {
+	DeviceLibraryIdentifier string
+	PassTypeIdentifier      string
+	SerialNumber            string
+}
+
+func (c PassController) walletRegistrationPath(path string) (walletPathParams, bool) {
+	rest := strings.TrimPrefix(path, c.pathPrefix+"v1/")
+	parts := strings.Split(rest, "/")
+	if len(parts) != 5 || parts[0] != "devices" || parts[2] != "registrations" {
+		return walletPathParams{}, false
+	}
+	return walletPathParams{
+		DeviceLibraryIdentifier: parts[1],
+		PassTypeIdentifier:      parts[3],
+		SerialNumber:            parts[4],
+	}, true
+}
+
+func (c PassController) walletUpdatedSerialsPath(path string) (walletPathParams, bool) {
+	rest := strings.TrimPrefix(path, c.pathPrefix+"v1/")
+	parts := strings.Split(rest, "/")
+	if len(parts) != 4 || parts[0] != "devices" || parts[2] != "registrations" {
+		return walletPathParams{}, false
+	}
+	return walletPathParams{
+		DeviceLibraryIdentifier: parts[1],
+		PassTypeIdentifier:      parts[3],
+	}, true
+}
+
+func (c PassController) walletPassPath(path string) (walletPathParams, bool) {
+	rest := strings.TrimPrefix(path, c.pathPrefix+"v1/")
+	parts := strings.Split(rest, "/")
+	if len(parts) != 3 || parts[0] != "passes" {
+		return walletPathParams{}, false
+	}
+	return walletPathParams{
+		PassTypeIdentifier: parts[1],
+		SerialNumber:       parts[2],
+	}, true
+}
+
+func applePassAuthorizationToken(authorization string) string {
+	scheme, token, ok := strings.Cut(strings.TrimSpace(authorization), " ")
+	if !ok || scheme != "ApplePass" {
+		return ""
+	}
+	return strings.TrimSpace(token)
 }
 
 func hasRouteShape(path string, prefix string, suffix string) bool {

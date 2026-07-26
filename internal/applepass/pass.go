@@ -38,9 +38,10 @@ type PassStructure struct {
 }
 
 type Field struct {
-	Key   string `json:"key"`
-	Label string `json:"label"`
-	Value any    `json:"value"`
+	Key           string `json:"key"`
+	Label         string `json:"label"`
+	Value         any    `json:"value"`
+	ChangeMessage string `json:"changeMessage,omitempty"`
 }
 
 type StampCardMember struct {
@@ -51,13 +52,15 @@ type StampCardMember struct {
 	StampCount int
 	StampGoal  int
 	BarcodeID  string
+	Promotion  string
 }
 
 type TemplateConfig struct {
-	PassTypeID       string
-	TeamID           string
-	OrganizationName string
-	WebServiceURL    string
+	PassTypeID          string
+	TeamID              string
+	OrganizationName    string
+	WebServiceURL       string
+	AuthenticationToken string
 }
 
 func NewStampCardPass(cfg TemplateConfig, member StampCardMember) Pass {
@@ -107,9 +110,19 @@ func NewStampCardPass(cfg TemplateConfig, member StampCardMember) Pass {
 		},
 	}
 
-	if cfg.WebServiceURL != "" {
+	if member.Promotion != "" {
+		pass.StoreCard.AuxiliaryFields = append(pass.StoreCard.AuxiliaryFields, Field{
+			Key:           "promotion",
+			Label:         "Promotion",
+			Value:         member.Promotion,
+			ChangeMessage: "New offer: %@",
+		})
+		pass.UserInfo["promotion"] = member.Promotion
+	}
+
+	if cfg.WebServiceURL != "" && cfg.AuthenticationToken != "" {
 		pass.WebServiceURL = cfg.WebServiceURL
-		pass.AuthenticationToken = "replace-with-stable-random-token"
+		pass.AuthenticationToken = cfg.AuthenticationToken
 	}
 
 	return pass

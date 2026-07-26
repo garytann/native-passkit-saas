@@ -14,6 +14,9 @@ import (
 func NewHTTPHandler(ctx context.Context, cfg config.Config) (http.Handler, func(), error) {
 	var memberRepo httpapi.MemberRepository
 	var merchantRepo httpapi.MerchantRepository
+	var campaignRepo httpapi.CampaignRepository
+	var walletRegistrationRepo httpapi.WalletRegistrationRepository
+	var walletPassRepo httpapi.WalletPassRepository
 	cleanup := func() {}
 
 	if cfg.DatabaseURL == "" {
@@ -34,8 +37,11 @@ func NewHTTPHandler(ctx context.Context, cfg config.Config) (http.Handler, func(
 		}
 		memberRepo = repository.NewStoreMemberRepository(db)
 		merchantRepo = repository.NewMerchantRepository(db)
+		campaignRepo = repository.NewCampaignRepository(db)
+		walletRegistrationRepo = repository.NewWalletRegistrationRepository(db)
+		walletPassRepo = repository.NewWalletPassRepository(db)
 	}
 
-	server := httpapi.NewServer(cfg, memberRepo, merchantRepo)
+	server := httpapi.NewServerWithRepositories(cfg, memberRepo, merchantRepo, campaignRepo, walletRegistrationRepo, walletPassRepo)
 	return server.Routes(), cleanup, nil
 }
