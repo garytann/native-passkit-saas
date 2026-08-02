@@ -71,8 +71,9 @@ type updateMemberStampsRequest struct {
 }
 
 type updateMemberStampsResponse struct {
-	Member domain.StoreMember `json:"member"`
-	Event  stampUpdateEvent   `json:"event"`
+	Member       domain.StoreMember           `json:"member"`
+	Event        stampUpdateEvent             `json:"event"`
+	WalletUpdate service.WalletUpdateDispatch `json:"wallet_update"`
 }
 
 type stampUpdateEvent struct {
@@ -170,6 +171,7 @@ func (c CustomerController) UpdateMemberStamps(w http.ResponseWriter, r *http.Re
 			PreviousStampProgress: update.PreviousStampProgress,
 			NewStampProgress:      update.NewStampProgress,
 		},
+		WalletUpdate: update.WalletUpdate,
 	})
 }
 

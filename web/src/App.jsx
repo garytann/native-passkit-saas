@@ -976,7 +976,7 @@ function StampScanner({ onUpdateStamps }) {
       const result = await onUpdateStamps(safeMemberID, 1);
       setLastUpdate(result);
       setStatus("ready");
-      setMessage(`Added 1 stamp for ${result.member.customer_name}.`);
+      setMessage(`Added 1 stamp for ${result.member.customer_name}.${walletUpdateMessage(result.wallet_update)}`);
     } catch (err) {
       setStatus("error");
       setMessage(err instanceof Error ? err.message : "Unable to update stamp progress");
@@ -1080,6 +1080,22 @@ function memberIDFromQRCode(value) {
 
 function normalizeMemberIDInput(value) {
   return String(value ?? "").trim().toUpperCase();
+}
+
+function walletUpdateMessage(walletUpdate) {
+  if (!walletUpdate) {
+    return "";
+  }
+  if (walletUpdate.push_sent_count > 0) {
+    return ` Wallet refresh pushed to ${walletUpdate.push_sent_count} device${walletUpdate.push_sent_count === 1 ? "" : "s"}.`;
+  }
+  if (walletUpdate.registered_pass_count === 0) {
+    return " No Apple Wallet device is registered yet.";
+  }
+  if (walletUpdate.last_error) {
+    return " Wallet refresh could not be pushed.";
+  }
+  return "";
 }
 
 function cameraErrorMessage(err) {

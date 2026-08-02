@@ -60,11 +60,11 @@ func (s Server) Routes() http.Handler {
 
 	linker := newPassLinker(s.cfg.PublicBaseURL)
 	tokenManager := service.NewTokenManager(s.cfg.AuthTokenSecret)
-	memberService := service.NewMemberServiceWithMerchants(s.memberRepo, s.merchantRepo, linker)
-	merchantService := service.NewMerchantService(s.merchantRepo, tokenManager)
 	passService := service.NewPassServiceWithWalletPassesAndCampaigns(s.cfg, s.memberRepo, s.walletPassRepo, s.campaignRepo, linker)
-	walletService := service.NewWalletService(s.walletRegistrationRepo)
 	apnsSender := service.NewAPNSPassUpdateSender(s.cfg)
+	memberService := service.NewMemberServiceWithWalletUpdates(s.memberRepo, s.merchantRepo, linker, passService, s.walletRegistrationRepo, apnsSender)
+	merchantService := service.NewMerchantService(s.merchantRepo, tokenManager)
+	walletService := service.NewWalletService(s.walletRegistrationRepo)
 	campaignService := service.NewCampaignServiceWithPush(s.campaignRepo, s.memberRepo, passService, s.walletRegistrationRepo, apnsSender)
 
 	healthController := controller.HealthController{}

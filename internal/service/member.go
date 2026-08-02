@@ -36,11 +36,26 @@ type UpdateMemberStampsInput struct {
 	StampDelta int
 }
 
+type UpdateMemberStampsResult struct {
+	domain.StampUpdate
+	WalletUpdate WalletUpdateDispatch `json:"wallet_update"`
+}
+
+type WalletUpdateDispatch struct {
+	RegisteredPassCount int    `json:"registered_pass_count"`
+	PushSentCount       int    `json:"push_sent_count"`
+	PushFailedCount     int    `json:"push_failed_count"`
+	LastError           string `json:"last_error,omitempty"`
+}
+
 type MemberService struct {
-	repo      MemberRepository
-	merchants MerchantLookupRepository
-	linker    PassLinker
-	timeout   time.Duration
+	repo                MemberRepository
+	merchants           MerchantLookupRepository
+	linker              PassLinker
+	passUpdater         WalletPassUpdater
+	walletRegistrations CampaignWalletRegistrationRepository
+	pushSender          PassUpdateSender
+	timeout             time.Duration
 }
 
 type MerchantLookupRepository interface {
@@ -54,19 +69,22 @@ type PassLinker interface {
 }
 
 func NewMemberService(repo MemberRepository, linker PassLinker) MemberService {
-	return MemberService{
-		repo:    repo,
-		linker:  linker,
-		timeout: 5 * time.Second,
-	}
+	return NewMemberServiceWithWalletUpdates(repo, nil, linker, nil, nil, nil)
 }
 
 func NewMemberServiceWithMerchants(repo MemberRepository, merchants MerchantLookupRepository, linker PassLinker) MemberService {
+	return NewMemberServiceWithWalletUpdates(repo, merchants, linker, nil, nil, nil)
+}
+
+func NewMemberServiceWithWalletUpdates(repo MemberRepository, merchants MerchantLookupRepository, linker PassLinker, passUpdater WalletPassUpdater, walletRegistrations CampaignWalletRegistrationRepository, pushSender PassUpdateSender) MemberService {
 	return MemberService{
-		repo:      repo,
-		merchants: merchants,
-		linker:    linker,
-		timeout:   5 * time.Second,
+		repo:                repo,
+		merchants:           merchants,
+		linker:              linker,
+		passUpdater:         passUpdater,
+		walletRegistrations: walletRegistrations,
+		pushSender:          pushSender,
+		timeout:             5 * time.Second,
 	}
 }
 
@@ -154,15 +172,15 @@ func (s MemberService) RegisterMemberByMerchantSlug(ctx context.Context, merchan
 	return s.RegisterMember(ctx, input)
 }
 
-func (s MemberService) UpdateMemberStamps(ctx context.Context, input UpdateMemberStampsInput) (domain.StampUpdate, error) {
+func (s MemberService) UpdateMemberStamps(ctx context.Context, input UpdateMemberStampsInput) (UpdateMemberStampsResult, error) {
 	if s.repo == nil {
-		return domain.StampUpdate{}, ErrRepositoryUnavailable
+		return UpdateMemberStampsResult{}, ErrRepositoryUnavailable
 	}
 
 	input.MemberID = strings.TrimSpace(input.MemberID)
 	input.Merchant = strings.TrimSpace(input.Merchant)
 	if err := validateUpdateMemberStampsInput(input); err != nil {
-		return domain.StampUpdate{}, err
+		return UpdateMemberStampsResult{}, err
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
@@ -171,12 +189,57 @@ func (s MemberService) UpdateMemberStamps(ctx context.Context, input UpdateMembe
 	update, err := s.repo.UpdateStampProgressForMerchant(ctx, input.MemberID, input.Merchant, input.StampDelta)
 	if err != nil {
 		if errors.Is(err, domain.ErrStoreMemberForbidden) {
-			return domain.StampUpdate{}, ErrForbidden
+			return UpdateMemberStampsResult{}, ErrForbidden
 		}
-		return domain.StampUpdate{}, fmt.Errorf("update member stamps: %w", err)
+		return UpdateMemberStampsResult{}, fmt.Errorf("update member stamps: %w", err)
 	}
 
-	return update, nil
+	return UpdateMemberStampsResult{
+		StampUpdate:  update,
+		WalletUpdate: s.dispatchWalletPassUpdate(ctx, update.Member.MemberID),
+	}, nil
+}
+
+func (s MemberService) dispatchWalletPassUpdate(ctx context.Context, memberID string) WalletUpdateDispatch {
+	memberID = strings.TrimSpace(memberID)
+	if memberID == "" {
+		return WalletUpdateDispatch{LastError: "member id is required"}
+	}
+	if s.passUpdater == nil {
+		return WalletUpdateDispatch{}
+	}
+
+	if err := s.passUpdater.MarkPassUpdated(ctx, memberID); err != nil {
+		if errors.Is(err, domain.ErrWalletPassNotFound) {
+			return WalletUpdateDispatch{LastError: "wallet pass not found"}
+		}
+		return WalletUpdateDispatch{LastError: err.Error()}
+	}
+
+	if s.walletRegistrations == nil || s.pushSender == nil {
+		return WalletUpdateDispatch{}
+	}
+
+	registrations, err := s.walletRegistrations.ListBySerialNumber(ctx, memberID)
+	if err != nil {
+		return WalletUpdateDispatch{LastError: err.Error()}
+	}
+
+	result := WalletUpdateDispatch{
+		RegisteredPassCount: len(registrations),
+	}
+	for _, registration := range registrations {
+		if err := s.pushSender.SendPassUpdate(ctx, registration.PushToken); err != nil {
+			result.PushFailedCount += 1
+			result.LastError = err.Error()
+			continue
+		}
+		result.PushSentCount += 1
+	}
+	if result.PushSentCount > 0 {
+		result.LastError = ""
+	}
+	return result
 }
 
 func validateRegisterMemberInput(input RegisterMemberInput) error {
