@@ -56,7 +56,7 @@ func TestCustomerRegistrationRouteIsVersioned(t *testing.T) {
 	request := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/customers/members/register",
-		strings.NewReader(`{"name":"Test","email":"test@example.com","merchant":"Saga"}`),
+		strings.NewReader(`{"name":"Test","email":"test@example.com","merchant":"Just"}`),
 	)
 	request.Header.Set("Content-Type", "application/json")
 	routes.ServeHTTP(response, request)
@@ -73,7 +73,7 @@ func TestMerchantRegistrationRouteIsVersioned(t *testing.T) {
 	request := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/merchants/register",
-		strings.NewReader(`{"first_name":"Gary","last_name":"Lee","company":"Saga Loyalty","merchant_email":"merchant@example.com","password":"password123"}`),
+		strings.NewReader(`{"first_name":"Gary","last_name":"Lee","company":"Just Loyalty","merchant_email":"merchant@example.com","password":"password123"}`),
 	)
 	request.Header.Set("Content-Type", "application/json")
 	routes.ServeHTTP(response, request)

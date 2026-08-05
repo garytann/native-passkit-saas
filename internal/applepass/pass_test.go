@@ -6,7 +6,7 @@ func TestNewStampCardPassUsesPurpleLoyaltyProgramLayout(t *testing.T) {
 	pass := NewStampCardPass(TemplateConfig{
 		PassTypeID:       "pass.com.example.loyalty",
 		TeamID:           "TEAM12345",
-		OrganizationName: "Saga Loyalty",
+		OrganizationName: "Just Loyalty",
 	}, StampCardMember{
 		ID:         "MBR-12345",
 		FullName:   "Gary Tan",
