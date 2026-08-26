@@ -95,7 +95,12 @@ func NewStampCardPass(cfg TemplateConfig, member StampCardMember) Pass {
 				{Key: "member", Label: "Member", Value: member.FullName},
 			},
 			AuxiliaryFields: []Field{
-				{Key: "remaining", Label: "Remaining", Value: remainingStamps(member.StampCount, member.StampGoal)},
+				{
+					Key:           "remaining",
+					Label:         "Remaining",
+					Value:         remainingStamps(member.StampCount, member.StampGoal),
+					ChangeMessage: "Enjoy your coffee! Only %@ until your next free treat.",
+				},
 			},
 			BackFields: []Field{
 				{Key: "member_id", Label: "Member ID", Value: member.ID},

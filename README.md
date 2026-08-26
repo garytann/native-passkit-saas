@@ -158,6 +158,15 @@ The second migration creates `merchants` for SaaS merchant onboarding:
 
 Merchant registration accepts a plain `password` in the API request, hashes it with bcrypt in the service layer, and stores only `password_hash`. New merchants start with `payment_status` set to `inactive`; payment activation can be added later.
 
+Campaign and Wallet update tracking is kept out of `store_members`. The campaign migration creates:
+
+- `campaigns` - merchant-owned campaign definitions, message content, status, and timing.
+- `campaign_deliveries` - per-member campaign targeting/delivery state.
+- `wallet_passes` - per-pass authentication tokens and update timestamps.
+- `wallet_registrations` - Apple Wallet device/pass push tokens registered through the Wallet pass web service.
+
+This keeps member profile data separate from promotional state and gives the platform a delivery history for future campaign analytics.
+
 ## Docker Compose
 
 The easiest way to run the full POC stack is Docker Compose:
@@ -323,6 +332,37 @@ Request:
 
 The backend resolves `daily-brew` to the merchant record and creates the member under that merchant.
 
+## Campaigns and Wallet Updates
+
+Merchants can create campaigns with:
+
+```http
+POST /api/v1/campaigns
+Authorization: Bearer <merchant-token>
+Content-Type: application/json
+
+{
+  "title": "Double stamps weekend",
+  "message": "Get double stamps this Saturday and Sunday."
+}
+```
+
+The API creates a `campaigns` row, queues `campaign_deliveries` for the merchant's current members, and marks any existing `wallet_passes` as updated. If a member has a Wallet registration, the backend sends an APNs pass-update push to the stored `pushToken`. The generated pass includes the active campaign message as a `Promotion` field with `changeMessage`.
+
+Apple Wallet populates `wallet_registrations` after a customer adds a pass. The pass contains `webServiceURL` and `authenticationToken`, then Wallet calls:
+
+```http
+POST /api/v1/apple/passes/v1/devices/{deviceLibraryIdentifier}/registrations/{passTypeIdentifier}/{serialNumber}
+Authorization: ApplePass <authenticationToken>
+Content-Type: application/json
+
+{
+  "pushToken": "<apple-wallet-push-token>"
+}
+```
+
+The same web service also supports unregistering, listing changed serial numbers, and returning the updated `.pkpass` to Wallet. The APNs endpoint defaults to `https://api.push.apple.com` and can be overridden with `APPLE_APNS_ENDPOINT`.
+
 ## Member Registration API
 
 ```http
@@ -466,7 +506,7 @@ http://127.0.0.1:5173/members/register
 It only asks for name and email, then submits the configured merchant name behind the scenes. Set `VITE_DEFAULT_MERCHANT` for the frontend if you want to change the merchant used by that page:
 
 ```sh
-VITE_DEFAULT_MERCHANT="Saga Loyalty" npm run dev -- --port 5173
+VITE_DEFAULT_MERCHANT="Just Loyalty" npm run dev -- --port 5173
 ```
 
 After registration, the page shows a direct `.pkpass` link for testing. In a later phase, that same response can be used to email the pass link instead.

@@ -34,4 +34,7 @@ func TestNewStampCardPassUsesPurpleLoyaltyProgramLayout(t *testing.T) {
 	if got := pass.StoreCard.PrimaryFields[0].Value; got != "Coffee Brew Loyalty Program" {
 		t.Fatalf("expected loyalty program name, got %v", got)
 	}
+	if got := pass.StoreCard.AuxiliaryFields[0].ChangeMessage; got != "Enjoy your coffee! Only %@ until your next free treat." {
+		t.Fatalf("expected remaining stamps change message, got %q", got)
+	}
 }
