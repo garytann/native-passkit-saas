@@ -229,7 +229,7 @@ func (s MemberService) dispatchWalletPassUpdate(ctx context.Context, memberID st
 		RegisteredPassCount: len(registrations),
 	}
 	for _, registration := range registrations {
-		if err := s.pushSender.SendPassUpdate(ctx, registration.PushToken); err != nil {
+		if err := s.pushSender.SendPassUpdate(ctx, registration.PassTypeIdentifier, registration.PushToken); err != nil {
 			result.PushFailedCount += 1
 			result.LastError = err.Error()
 			continue

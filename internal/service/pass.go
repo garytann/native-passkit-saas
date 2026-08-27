@@ -20,6 +20,7 @@ type PassService struct {
 	repo         MemberRepository
 	walletPasses WalletPassRepository
 	campaigns    ActiveCampaignRepository
+	credentials  AppleWalletCredentialResolver
 	linker       PassLinker
 	timeout      time.Duration
 }
@@ -27,7 +28,7 @@ type PassService struct {
 type WalletPassRepository interface {
 	GetOrCreate(ctx context.Context, input domain.CreateWalletPassInput) (domain.WalletPass, error)
 	GetBySerial(ctx context.Context, passTypeIdentifier string, serialNumber string) (domain.WalletPass, error)
-	Touch(ctx context.Context, passTypeIdentifier string, serialNumber string) error
+	TouchBySerial(ctx context.Context, serialNumber string) error
 }
 
 type ActiveCampaignRepository interface {
@@ -64,9 +65,12 @@ func NewPassServiceWithWalletPasses(cfg config.Config, repo MemberRepository, wa
 	return service
 }
 
-func NewPassServiceWithWalletPassesAndCampaigns(cfg config.Config, repo MemberRepository, walletPasses WalletPassRepository, campaigns ActiveCampaignRepository, linker PassLinker) PassService {
+func NewPassServiceWithWalletPassesAndCampaigns(cfg config.Config, repo MemberRepository, walletPasses WalletPassRepository, campaigns ActiveCampaignRepository, linker PassLinker, credentialResolvers ...AppleWalletCredentialResolver) PassService {
 	service := NewPassServiceWithWalletPasses(cfg, repo, walletPasses, linker)
 	service.campaigns = campaigns
+	if len(credentialResolvers) > 0 {
+		service.credentials = credentialResolvers[0]
+	}
 	return service
 }
 
@@ -78,16 +82,27 @@ func (s PassService) ExampleLinks(memberID string) map[string]string {
 }
 
 func (s PassService) CreatePackage(ctx context.Context, memberID string) ([]byte, error) {
+	return s.createPackage(ctx, memberID, "")
+}
+
+func (s PassService) createPackage(ctx context.Context, memberID string, expectedPassTypeIdentifier string) ([]byte, error) {
 	member, err := s.StampCardMember(ctx, memberID)
 	if err != nil {
 		return nil, err
 	}
 
-	pass, err := s.stampCardPass(ctx, member)
+	credential, err := s.activeCredential(ctx, member.BrandName)
 	if err != nil {
 		return nil, err
 	}
-	data, err := s.generator.Create(pass)
+	if expectedPassTypeIdentifier != "" && credential.PassTypeIdentifier != expectedPassTypeIdentifier {
+		return nil, ErrUnauthorized
+	}
+	pass, err := s.stampCardPass(ctx, member, credential)
+	if err != nil {
+		return nil, err
+	}
+	data, err := s.generatorFor(credential).Create(pass)
 	if err != nil {
 		return nil, fmt.Errorf("create pass package: %w", err)
 	}
@@ -101,7 +116,11 @@ func (s PassService) Preview(ctx context.Context, memberID string) (PassPreview,
 		return PassPreview{}, err
 	}
 
-	pass, err := s.stampCardPass(ctx, member)
+	credential, err := s.activeCredential(ctx, member.BrandName)
+	if err != nil {
+		return PassPreview{}, err
+	}
+	pass, err := s.stampCardPass(ctx, member, credential)
 	if err != nil {
 		return PassPreview{}, err
 	}
@@ -167,7 +186,7 @@ func (s PassService) AuthenticatedPackage(ctx context.Context, passTypeIdentifie
 	if err := s.AuthorizePass(ctx, passTypeIdentifier, serialNumber, authorization); err != nil {
 		return nil, err
 	}
-	return s.CreatePackage(ctx, serialNumber)
+	return s.createPackage(ctx, serialNumber, strings.TrimSpace(passTypeIdentifier))
 }
 
 func (s PassService) AuthorizePass(ctx context.Context, passTypeIdentifier string, serialNumber string, authorization string) error {
@@ -204,28 +223,28 @@ func (s PassService) MarkPassUpdated(ctx context.Context, serialNumber string) e
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
-	if err := s.walletPasses.Touch(ctx, s.cfg.PassTypeID, serialNumber); err != nil {
+	if err := s.walletPasses.TouchBySerial(ctx, serialNumber); err != nil {
 		return fmt.Errorf("mark pass updated: %w", err)
 	}
 	return nil
 }
 
-func (s PassService) stampCardPass(ctx context.Context, member applepass.StampCardMember) (applepass.Pass, error) {
-	walletPass, err := s.ensureWalletPass(ctx, member.ID)
+func (s PassService) stampCardPass(ctx context.Context, member applepass.StampCardMember, credential domain.ActiveAppleWalletCredential) (applepass.Pass, error) {
+	walletPass, err := s.ensureWalletPass(ctx, credential.PassTypeIdentifier, member.ID)
 	if err != nil {
 		return applepass.Pass{}, err
 	}
 
 	return applepass.NewStampCardPass(applepass.TemplateConfig{
-		PassTypeID:          s.cfg.PassTypeID,
-		TeamID:              s.cfg.TeamID,
-		OrganizationName:    s.cfg.OrganizationName,
+		PassTypeID:          credential.PassTypeIdentifier,
+		TeamID:              credential.TeamIdentifier,
+		OrganizationName:    credential.OrganizationName,
 		WebServiceURL:       s.appleWebServiceURL(),
 		AuthenticationToken: walletPass.AuthenticationToken,
 	}, member), nil
 }
 
-func (s PassService) ensureWalletPass(ctx context.Context, serialNumber string) (domain.WalletPass, error) {
+func (s PassService) ensureWalletPass(ctx context.Context, passTypeIdentifier string, serialNumber string) (domain.WalletPass, error) {
 	if s.walletPasses == nil {
 		return domain.WalletPass{}, nil
 	}
@@ -239,7 +258,7 @@ func (s PassService) ensureWalletPass(ctx context.Context, serialNumber string) 
 	defer cancel()
 
 	walletPass, err := s.walletPasses.GetOrCreate(ctx, domain.CreateWalletPassInput{
-		PassTypeIdentifier:  s.cfg.PassTypeID,
+		PassTypeIdentifier:  passTypeIdentifier,
 		SerialNumber:        serialNumber,
 		AuthenticationToken: token,
 	})
@@ -247,6 +266,39 @@ func (s PassService) ensureWalletPass(ctx context.Context, serialNumber string) 
 		return domain.WalletPass{}, fmt.Errorf("ensure wallet pass: %w", err)
 	}
 	return walletPass, nil
+}
+
+func (s PassService) activeCredential(ctx context.Context, merchant string) (domain.ActiveAppleWalletCredential, error) {
+	if s.credentials != nil {
+		credential, err := s.credentials.ResolveActiveByMerchant(ctx, merchant)
+		if err == nil {
+			return credential, nil
+		}
+		if !errors.Is(err, domain.ErrAppleWalletIssuerNotFound) {
+			return domain.ActiveAppleWalletCredential{}, err
+		}
+	}
+
+	if strings.TrimSpace(s.cfg.PassTypeID) == "" || strings.TrimSpace(s.cfg.TeamID) == "" {
+		return domain.ActiveAppleWalletCredential{}, domain.ErrAppleWalletNotProvisioned
+	}
+	return domain.ActiveAppleWalletCredential{
+		OrganizationName:   s.cfg.OrganizationName,
+		TeamIdentifier:     s.cfg.TeamID,
+		PassTypeIdentifier: s.cfg.PassTypeID,
+		PassStyle:          "storeCard",
+		CertificateRef:     s.cfg.PassCertPath,
+		PrivateKeyRef:      s.cfg.PassKeyPath,
+	}, nil
+}
+
+func (s PassService) generatorFor(credential domain.ActiveAppleWalletCredential) applepass.Generator {
+	return applepass.Generator{
+		SignerCertPath: credential.CertificateRef,
+		SignerKeyPath:  credential.PrivateKeyRef,
+		WWDRCertPath:   s.cfg.WWDRCertPath,
+		OpenSSLBin:     s.cfg.OpenSSLBin,
+	}
 }
 
 func (s PassService) appleWebServiceURL() string {

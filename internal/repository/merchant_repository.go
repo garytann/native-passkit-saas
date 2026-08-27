@@ -44,6 +44,37 @@ func AutoMigrateMerchants(db *gorm.DB) error {
 }
 
 func (r MerchantRepository) Create(ctx context.Context, input domain.CreateMerchantInput) (domain.Merchant, error) {
+	return r.create(ctx, r.db, input)
+}
+
+func (r MerchantRepository) CreateWithPendingWalletIssuer(ctx context.Context, input domain.CreateMerchantInput, issuerInput domain.CreateAppleWalletIssuerInput) (domain.Merchant, error) {
+	var created domain.Merchant
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		merchant, err := r.create(ctx, tx, input)
+		if err != nil {
+			return err
+		}
+		issuer := appleWalletIssuerModel{
+			IssuerID:         issuerInput.IssuerID,
+			MerchantID:       issuerInput.MerchantID,
+			OwnershipMode:    issuerInput.OwnershipMode,
+			TeamIdentifier:   issuerInput.TeamIdentifier,
+			OrganizationName: issuerInput.OrganizationName,
+			Status:           issuerInput.Status,
+		}
+		if err := tx.WithContext(ctx).Create(&issuer).Error; err != nil {
+			return fmt.Errorf("create pending apple wallet issuer: %w", err)
+		}
+		created = merchant
+		return nil
+	})
+	if err != nil {
+		return domain.Merchant{}, err
+	}
+	return created, nil
+}
+
+func (r MerchantRepository) create(ctx context.Context, db *gorm.DB, input domain.CreateMerchantInput) (domain.Merchant, error) {
 	merchant := merchantModel{
 		MerchantID:    input.MerchantID,
 		FirstName:     input.FirstName,
@@ -55,7 +86,7 @@ func (r MerchantRepository) Create(ctx context.Context, input domain.CreateMerch
 		PaymentStatus: "inactive",
 	}
 
-	if err := r.db.WithContext(ctx).Create(&merchant).Error; err != nil {
+	if err := db.WithContext(ctx).Create(&merchant).Error; err != nil {
 		if isUniqueViolation(err) {
 			return domain.Merchant{}, domain.ErrMerchantAlreadyExists
 		}

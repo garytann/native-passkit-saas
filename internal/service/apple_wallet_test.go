@@ -1,0 +1,111 @@
+package service
+
+import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestValidateAppleCertificateAcceptsMatchingCredential(t *testing.T) {
+	certificatePath, keyPath, wwdrPath := writeTestAppleCredential(t, "pass.com.justloyalty.test", "TEAM123456")
+
+	metadata, err := validateAppleCertificate(
+		certificatePath,
+		keyPath,
+		wwdrPath,
+		"pass.com.justloyalty.test",
+		"TEAM123456",
+		time.Now().UTC(),
+	)
+	if err != nil {
+		t.Fatalf("expected matching credential to validate, got %v", err)
+	}
+	if metadata.Fingerprint == "" || metadata.SerialNumber == "" {
+		t.Fatalf("expected certificate metadata, got %+v", metadata)
+	}
+}
+
+func TestValidateAppleCertificateRejectsWrongPassType(t *testing.T) {
+	certificatePath, keyPath, wwdrPath := writeTestAppleCredential(t, "pass.com.justloyalty.test", "TEAM123456")
+
+	_, err := validateAppleCertificate(
+		certificatePath,
+		keyPath,
+		wwdrPath,
+		"pass.com.justloyalty.other",
+		"TEAM123456",
+		time.Now().UTC(),
+	)
+	if err == nil {
+		t.Fatal("expected mismatched Pass Type ID to fail validation")
+	}
+}
+
+func writeTestAppleCredential(t *testing.T, passTypeIdentifier string, teamIdentifier string) (string, string, string) {
+	t.Helper()
+	now := time.Now().UTC()
+
+	wwdrKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate WWDR key: %v", err)
+	}
+	wwdrTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "Apple Worldwide Developer Relations Certification Authority", OrganizationalUnit: []string{"G4"}},
+		NotBefore:             now.Add(-time.Hour),
+		NotAfter:              now.Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	wwdrDER, err := x509.CreateCertificate(rand.Reader, wwdrTemplate, wwdrTemplate, &wwdrKey.PublicKey, wwdrKey)
+	if err != nil {
+		t.Fatalf("create WWDR certificate: %v", err)
+	}
+
+	passKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate pass key: %v", err)
+	}
+	passTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(2),
+		Subject: pkix.Name{
+			CommonName:         "Pass Type ID: " + passTypeIdentifier,
+			OrganizationalUnit: []string{teamIdentifier},
+			ExtraNames: []pkix.AttributeTypeAndValue{
+				{Type: subjectUIDOID, Value: passTypeIdentifier},
+			},
+		},
+		NotBefore: now.Add(-time.Hour),
+		NotAfter:  now.Add(24 * time.Hour),
+		KeyUsage:  x509.KeyUsageDigitalSignature,
+	}
+	passDER, err := x509.CreateCertificate(rand.Reader, passTemplate, wwdrTemplate, &passKey.PublicKey, wwdrKey)
+	if err != nil {
+		t.Fatalf("create pass certificate: %v", err)
+	}
+
+	directory := t.TempDir()
+	certificatePath := filepath.Join(directory, "pass-cert.pem")
+	keyPath := filepath.Join(directory, "pass-key.pem")
+	wwdrPath := filepath.Join(directory, "wwdr.pem")
+	writePEMFile(t, certificatePath, "CERTIFICATE", passDER, 0o644)
+	writePEMFile(t, keyPath, "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(passKey), 0o600)
+	writePEMFile(t, wwdrPath, "CERTIFICATE", wwdrDER, 0o644)
+	return certificatePath, keyPath, wwdrPath
+}
+
+func writePEMFile(t *testing.T, path string, blockType string, der []byte, mode os.FileMode) {
+	t.Helper()
+	data := pem.EncodeToMemory(&pem.Block{Type: blockType, Bytes: der})
+	if err := os.WriteFile(path, data, mode); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}

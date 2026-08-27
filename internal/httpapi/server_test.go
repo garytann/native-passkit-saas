@@ -144,3 +144,15 @@ func TestUpdateMemberStampsRequiresMerchantToken(t *testing.T) {
 		t.Fatalf("expected stamp update route to require auth token, got %d", response.Code)
 	}
 }
+
+func TestAppleWalletAdminRouteRequiresAdminToken(t *testing.T) {
+	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080", AdminAPIToken: "admin-secret"}, nil, nil)
+	routes := server.Routes()
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/admin/merchants/MCH-ABC12345/apple-wallet", nil)
+	routes.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected Apple Wallet admin route to require admin token, got %d", response.Code)
+	}
+}

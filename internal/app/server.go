@@ -17,6 +17,7 @@ func NewHTTPHandler(ctx context.Context, cfg config.Config) (http.Handler, func(
 	var campaignRepo httpapi.CampaignRepository
 	var walletRegistrationRepo httpapi.WalletRegistrationRepository
 	var walletPassRepo httpapi.WalletPassRepository
+	var appleWalletRepo httpapi.AppleWalletRepository
 	cleanup := func() {}
 
 	if cfg.DatabaseURL == "" {
@@ -40,8 +41,9 @@ func NewHTTPHandler(ctx context.Context, cfg config.Config) (http.Handler, func(
 		campaignRepo = repository.NewCampaignRepository(db)
 		walletRegistrationRepo = repository.NewWalletRegistrationRepository(db)
 		walletPassRepo = repository.NewWalletPassRepository(db)
+		appleWalletRepo = repository.NewAppleWalletRepository(db)
 	}
 
-	server := httpapi.NewServerWithRepositories(cfg, memberRepo, merchantRepo, campaignRepo, walletRegistrationRepo, walletPassRepo)
+	server := httpapi.NewServerWithAppleWalletRepository(cfg, memberRepo, merchantRepo, campaignRepo, walletRegistrationRepo, walletPassRepo, appleWalletRepo)
 	return server.Routes(), cleanup, nil
 }

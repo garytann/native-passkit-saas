@@ -68,10 +68,10 @@ func (r WalletPassRepository) GetBySerial(ctx context.Context, passTypeIdentifie
 	return walletPassFromModel(walletPass), nil
 }
 
-func (r WalletPassRepository) Touch(ctx context.Context, passTypeIdentifier string, serialNumber string) error {
+func (r WalletPassRepository) TouchBySerial(ctx context.Context, serialNumber string) error {
 	result := r.db.WithContext(ctx).
 		Model(&walletPassModel{}).
-		Where("pass_type_identifier = ? AND serial_number = ?", passTypeIdentifier, serialNumber).
+		Where("serial_number = ?", serialNumber).
 		Update("last_updated_at", time.Now().UTC())
 	if result.Error != nil {
 		return fmt.Errorf("touch wallet pass: %w", result.Error)

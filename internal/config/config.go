@@ -7,38 +7,42 @@ import (
 )
 
 type Config struct {
-	Port             string
-	DatabaseURL      string
-	PublicBaseURL    string
-	AuthTokenSecret  string
-	PassTypeID       string
-	TeamID           string
-	OrganizationName string
-	WebServiceURL    string
-	PassCertPath     string
-	PassKeyPath      string
-	WWDRCertPath     string
-	APNSEndpoint     string
-	OpenSSLBin       string
+	Port                string
+	DatabaseURL         string
+	PublicBaseURL       string
+	AuthTokenSecret     string
+	AdminAPIToken       string
+	CertificateBasePath string
+	PassTypeID          string
+	TeamID              string
+	OrganizationName    string
+	WebServiceURL       string
+	PassCertPath        string
+	PassKeyPath         string
+	WWDRCertPath        string
+	APNSEndpoint        string
+	OpenSSLBin          string
 }
 
 func Load() Config {
 	_ = loadDotEnv(".env")
 
 	return Config{
-		Port:             env("PORT", "8080"),
-		DatabaseURL:      env("DATABASE_URL", ""),
-		PublicBaseURL:    env("PUBLIC_BASE_URL", "http://localhost:8080"),
-		AuthTokenSecret:  env("AUTH_TOKEN_SECRET", "dev-only-change-me"),
-		PassTypeID:       env("APPLE_PASS_TYPE_ID", "pass.com.example.membership"),
-		TeamID:           env("APPLE_TEAM_ID", "ABCDE12345"),
-		OrganizationName: env("APPLE_ORGANIZATION_NAME", "Example Company"),
-		WebServiceURL:    env("APPLE_WEB_SERVICE_URL", ""),
-		PassCertPath:     env("APPLE_PASS_CERT_PATH", "certs/pass-cert.pem"),
-		PassKeyPath:      env("APPLE_PASS_KEY_PATH", "certs/pass-key.pem"),
-		WWDRCertPath:     env("APPLE_WWDR_CERT_PATH", "certs/wwdr.pem"),
-		APNSEndpoint:     env("APPLE_APNS_ENDPOINT", "https://api.push.apple.com"),
-		OpenSSLBin:       env("OPENSSL_BIN", "openssl"),
+		Port:                env("PORT", "8080"),
+		DatabaseURL:         env("DATABASE_URL", ""),
+		PublicBaseURL:       env("PUBLIC_BASE_URL", "http://localhost:8080"),
+		AuthTokenSecret:     env("AUTH_TOKEN_SECRET", "dev-only-change-me"),
+		AdminAPIToken:       env("ADMIN_API_TOKEN", ""),
+		CertificateBasePath: env("APPLE_CERTIFICATE_BASE_PATH", "certs"),
+		PassTypeID:          env("APPLE_PASS_TYPE_ID", "pass.com.example.membership"),
+		TeamID:              env("APPLE_TEAM_ID", "ABCDE12345"),
+		OrganizationName:    env("APPLE_ORGANIZATION_NAME", "Example Company"),
+		WebServiceURL:       env("APPLE_WEB_SERVICE_URL", ""),
+		PassCertPath:        env("APPLE_PASS_CERT_PATH", "certs/pass-cert.pem"),
+		PassKeyPath:         env("APPLE_PASS_KEY_PATH", "certs/pass-key.pem"),
+		WWDRCertPath:        env("APPLE_WWDR_CERT_PATH", "certs/wwdr.pem"),
+		APNSEndpoint:        env("APPLE_APNS_ENDPOINT", "https://api.push.apple.com"),
+		OpenSSLBin:          env("OPENSSL_BIN", "openssl"),
 	}
 }
 

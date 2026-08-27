@@ -13,7 +13,7 @@ import (
 )
 
 type MerchantRepository interface {
-	Create(ctx context.Context, input domain.CreateMerchantInput) (domain.Merchant, error)
+	CreateWithPendingWalletIssuer(ctx context.Context, merchant domain.CreateMerchantInput, issuer domain.CreateAppleWalletIssuerInput) (domain.Merchant, error)
 	GetByEmail(ctx context.Context, email string) (domain.MerchantCredentials, error)
 	GetBySlug(ctx context.Context, slug string) (domain.Merchant, error)
 }
@@ -29,9 +29,10 @@ type RegisterMerchantInput struct {
 var slugSeparators = regexp.MustCompile(`[^a-z0-9]+`)
 
 type MerchantService struct {
-	repo         MerchantRepository
-	tokenManager TokenManager
-	timeout      time.Duration
+	repo          MerchantRepository
+	tokenManager  TokenManager
+	defaultTeamID string
+	timeout       time.Duration
 }
 
 type LoginMerchantInput struct {
@@ -44,11 +45,16 @@ type LoginMerchantResult struct {
 	Token    string
 }
 
-func NewMerchantService(repo MerchantRepository, tokenManager TokenManager) MerchantService {
+func NewMerchantService(repo MerchantRepository, tokenManager TokenManager, defaultTeamID ...string) MerchantService {
+	teamID := ""
+	if len(defaultTeamID) > 0 {
+		teamID = strings.TrimSpace(defaultTeamID[0])
+	}
 	return MerchantService{
-		repo:         repo,
-		tokenManager: tokenManager,
-		timeout:      5 * time.Second,
+		repo:          repo,
+		tokenManager:  tokenManager,
+		defaultTeamID: teamID,
+		timeout:       5 * time.Second,
 	}
 }
 
@@ -69,6 +75,10 @@ func (s MerchantService) RegisterMerchant(ctx context.Context, input RegisterMer
 	if err != nil {
 		return domain.Merchant{}, err
 	}
+	issuerID, err := domain.NewAppleWalletIssuerID()
+	if err != nil {
+		return domain.Merchant{}, err
+	}
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -78,7 +88,7 @@ func (s MerchantService) RegisterMerchant(ctx context.Context, input RegisterMer
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	merchant, err := s.repo.Create(ctx, domain.CreateMerchantInput{
+	merchant, err := s.repo.CreateWithPendingWalletIssuer(ctx, domain.CreateMerchantInput{
 		MerchantID:    merchantID,
 		FirstName:     input.FirstName,
 		LastName:      input.LastName,
@@ -86,6 +96,13 @@ func (s MerchantService) RegisterMerchant(ctx context.Context, input RegisterMer
 		MerchantSlug:  MerchantSlug(input.Company),
 		MerchantEmail: input.MerchantEmail,
 		PasswordHash:  string(passwordHash),
+	}, domain.CreateAppleWalletIssuerInput{
+		IssuerID:         issuerID,
+		MerchantID:       merchantID,
+		OwnershipMode:    "platform_managed",
+		TeamIdentifier:   s.defaultTeamID,
+		OrganizationName: input.Company,
+		Status:           "pending",
 	})
 	if err != nil {
 		return domain.Merchant{}, fmt.Errorf("register merchant: %w", err)

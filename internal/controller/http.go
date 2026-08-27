@@ -619,6 +619,16 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusUnauthorized, "invalid email or password")
 	case errors.Is(err, domain.ErrMerchantNotFound):
 		writeError(w, http.StatusNotFound, "merchant not found")
+	case errors.Is(err, domain.ErrAppleWalletIssuerNotFound):
+		writeError(w, http.StatusNotFound, "apple wallet issuer not found")
+	case errors.Is(err, domain.ErrAppleWalletPassTypeNotFound):
+		writeError(w, http.StatusNotFound, "apple wallet pass type not found")
+	case errors.Is(err, domain.ErrAppleWalletCertificateNotFound):
+		writeError(w, http.StatusNotFound, "apple wallet certificate not found")
+	case errors.Is(err, domain.ErrAppleWalletNotProvisioned):
+		writeError(w, http.StatusConflict, "apple wallet is not provisioned for merchant")
+	case errors.Is(err, domain.ErrAppleWalletConfigurationConflict):
+		writeError(w, http.StatusConflict, "apple wallet configuration already exists")
 	case errors.Is(err, domain.ErrStoreMemberNotFound):
 		writeError(w, http.StatusNotFound, "member not found")
 	default:

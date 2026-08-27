@@ -179,7 +179,7 @@ func (s CampaignService) dispatchPassUpdates(ctx context.Context, deliveries []d
 		successes := 0
 		var lastError string
 		for _, registration := range registrations {
-			if err := s.pushSender.SendPassUpdate(ctx, registration.PushToken); err != nil {
+			if err := s.pushSender.SendPassUpdate(ctx, registration.PassTypeIdentifier, registration.PushToken); err != nil {
 				pushFailedCount += 1
 				lastError = err.Error()
 				continue
