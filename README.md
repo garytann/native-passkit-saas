@@ -528,10 +528,74 @@ Download the current Apple WWDR intermediate certificate from Apple and convert 
 openssl x509 -inform DER -in AppleWWDRCAG*.cer -out certs/wwdr.pem
 ```
 
+## Per-Merchant Apple Wallet Provisioning
+
+New merchant registration creates an `apple_wallet_issuers` record with a
+`pending` status. Existing merchants receive the record when an administrator
+first configures their issuer. Pass issuance for a pending issuer is disabled
+until a matching Pass Type certificate is validated and activated.
+
+Set an administrator token and mount merchant credentials beneath the shared
+certificate directory:
+
+```env
+ADMIN_API_TOKEN=replace-with-a-long-random-value
+APPLE_CERTIFICATE_BASE_PATH=certs
+```
+
+```text
+certs/luckin-coffee/pass-cert.pem
+certs/luckin-coffee/pass-key.pem
+certs/wwdr.pem
+```
+
+Provision an existing or newly registered merchant in three steps. Replace the
+merchant ID and administrator token with your own values.
+
+```bash
+curl -X POST https://loyalty.example.com/api/v1/admin/merchants/MCH-EXAMPLE/apple-wallet/issuer \
+  -H 'Authorization: Bearer your-admin-token' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "ownership_mode": "platform_managed",
+    "team_identifier": "FVNA87HWN5",
+    "organization_name": "Luckin Coffee"
+  }'
+```
+
+```bash
+curl -X POST https://loyalty.example.com/api/v1/admin/merchants/MCH-EXAMPLE/apple-wallet/pass-types \
+  -H 'Authorization: Bearer your-admin-token' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "pass_type_identifier": "pass.com.justloyalty.luckincoffee",
+    "pass_style": "storeCard"
+  }'
+```
+
+```bash
+curl -X POST https://loyalty.example.com/api/v1/admin/merchants/MCH-EXAMPLE/apple-wallet/certificates \
+  -H 'Authorization: Bearer your-admin-token' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "pass_type_identifier": "pass.com.justloyalty.luckincoffee",
+    "credential_alias": "luckin-coffee"
+  }'
+```
+
+The last request validates the certificate/private-key match, Pass Type ID,
+Apple Team ID, validity period, and WWDR signature before activating the
+issuer. Inspect the resulting configuration with:
+
+```bash
+curl https://loyalty.example.com/api/v1/admin/merchants/MCH-EXAMPLE/apple-wallet \
+  -H 'Authorization: Bearer your-admin-token'
+```
+
 ## Next Steps
 
-1. Replace the sample member data with database-backed member records.
-2. Replace generated placeholder PNGs with branded pass assets.
-3. Add Wallet web service endpoints for pass updates.
-4. Add APNs push support for Wallet update notifications.
+1. Replace local certificate references with a production secret manager.
+2. Add certificate expiry monitoring and rotation controls.
+3. Add merchant-specific pass logos and branded assets.
+4. Add Apple Wallet provisioning status to the administrator UI.
 5. Add the Swift client flow from `docs/ios-passkit-client.md`.
