@@ -281,25 +281,25 @@ func (r AppleWalletRepository) ResolveActiveByPassType(ctx context.Context, pass
 }
 
 func activeAppleWalletCredentialQuery(db *gorm.DB) *gorm.DB {
-	return db.Table("apple_signing_certificates AS asc").
+	return db.Table("apple_signing_certificates AS cert").
 		Select(`
 			awi.merchant_id,
 			awi.issuer_id,
 			apt.apple_pass_type_id,
-			asc.certificate_id,
+			cert.certificate_id,
 			awi.organization_name,
 			awi.team_identifier,
 			apt.pass_type_identifier,
 			apt.pass_style,
-			asc.certificate_ref,
-			asc.private_key_ref,
-			asc.certificate_fingerprint,
-			asc.expires_at
+			cert.certificate_ref,
+			cert.private_key_ref,
+			cert.certificate_fingerprint,
+			cert.expires_at
 		`).
-		Joins("INNER JOIN apple_pass_types AS apt ON apt.apple_pass_type_id = asc.apple_pass_type_id").
+		Joins("INNER JOIN apple_pass_types AS apt ON apt.apple_pass_type_id = cert.apple_pass_type_id").
 		Joins("INNER JOIN apple_wallet_issuers AS awi ON awi.issuer_id = apt.issuer_id").
 		Joins("INNER JOIN merchants AS m ON m.merchant_id = awi.merchant_id").
-		Where("asc.status = ? AND apt.status = ? AND awi.status = ?", "active", "active", "active")
+		Where("cert.status = ? AND apt.status = ? AND awi.status = ?", "active", "active", "active")
 }
 
 func appleWalletIssuerFromModel(model appleWalletIssuerModel) domain.AppleWalletIssuer {
