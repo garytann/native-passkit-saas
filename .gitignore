@@ -12,6 +12,10 @@ certs/*
 !certs/.gitkeep
 !certs/README.md
 
+# Merchant pass artwork is provisioned with each deployment.
+pass-assets/*
+!pass-assets/README.md
+
 # Keep reverse-proxy TLS credentials out of git.
 proxy/certs/*
 !proxy/certs/.gitkeep

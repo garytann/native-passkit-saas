@@ -12,6 +12,9 @@ certs/*
 !certs/.gitkeep
 !certs/README.md
 
+pass-assets/*
+!pass-assets/README.md
+
 proxy/certs/*
 !proxy/certs/.gitkeep
 !proxy/certs/README.md
