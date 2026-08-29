@@ -535,21 +535,29 @@ New merchant registration creates an `apple_wallet_issuers` record with a
 first configures their issuer. Pass issuance for a pending issuer is disabled
 until a matching Pass Type certificate is validated and activated.
 
-Set an administrator token and mount merchant credentials beneath the shared
-certificate directory:
+Set an administrator token and mount merchant credentials and pass assets
+beneath their separate shared directories:
 
 ```env
 ADMIN_API_TOKEN=replace-with-a-long-random-value
 APPLE_CERTIFICATE_BASE_PATH=certs
+APPLE_PASS_ASSET_BASE_PATH=pass-assets
 ```
 
 ```text
 certs/luckin-coffee/pass-cert.pem
 certs/luckin-coffee/pass-key.pem
 certs/wwdr.pem
+
+pass-assets/luckin-coffee/icon.png
+pass-assets/luckin-coffee/icon@2x.png
+pass-assets/luckin-coffee/icon@3x.png
+pass-assets/luckin-coffee/logo.png
+pass-assets/luckin-coffee/logo@2x.png
+pass-assets/luckin-coffee/logo@3x.png
 ```
 
-Provision an existing or newly registered merchant in three steps. Replace the
+Provision an existing or newly registered merchant in four steps. Replace the
 merchant ID and administrator token with your own values.
 
 ```bash
@@ -585,7 +593,30 @@ curl -X POST https://loyalty.example.com/api/v1/admin/merchants/MCH-EXAMPLE/appl
 
 The last request validates the certificate/private-key match, Pass Type ID,
 Apple Team ID, validity period, and WWDR signature before activating the
-issuer. Inspect the resulting configuration with:
+issuer. Then create the merchant-specific pass design:
+
+```bash
+curl -X PUT https://loyalty.example.com/api/v1/admin/merchants/MCH-EXAMPLE/apple-wallet/pass-design \
+  -H 'Authorization: Bearer your-admin-token' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "pass_type_identifier": "pass.com.justloyalty.luckincoffee",
+    "program_name": "Luckin Coffee Loyalty Program",
+    "pass_description": "Collect stamps and enjoy rewards at Luckin Coffee.",
+    "stamp_goal": 10,
+    "background_color": "#5434F5",
+    "foreground_color": "#FFFFFF",
+    "label_color": "#E1DCFF",
+    "asset_bundle_ref": "luckin-coffee",
+    "campaign_display_mode": "details"
+  }'
+```
+
+`campaign_display_mode: details` keeps the active campaign in the pass back
+field `latest_offer`. Its `changeMessage` still produces the Wallet campaign
+notification, but campaign copy is not displayed on the pass front.
+
+Inspect the resulting configuration with:
 
 ```bash
 curl https://loyalty.example.com/api/v1/admin/merchants/MCH-EXAMPLE/apple-wallet \
@@ -596,6 +627,5 @@ curl https://loyalty.example.com/api/v1/admin/merchants/MCH-EXAMPLE/apple-wallet
 
 1. Replace local certificate references with a production secret manager.
 2. Add certificate expiry monitoring and rotation controls.
-3. Add merchant-specific pass logos and branded assets.
-4. Add Apple Wallet provisioning status to the administrator UI.
-5. Add the Swift client flow from `docs/ios-passkit-client.md`.
+3. Add Apple Wallet provisioning status to the administrator UI.
+4. Add the Swift client flow from `docs/ios-passkit-client.md`.
