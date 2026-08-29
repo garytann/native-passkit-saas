@@ -1,6 +1,9 @@
 package applepass
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+)
 
 type Pass struct {
 	FormatVersion       int               `json:"formatVersion"`
@@ -63,62 +66,69 @@ type TemplateConfig struct {
 	AuthenticationToken string
 }
 
-func NewStampCardPass(cfg TemplateConfig, member StampCardMember) Pass {
+type StampCardDesign struct {
+	ProgramName         string
+	PassDescription     string
+	StampGoal           int
+	BackgroundColor     string
+	ForegroundColor     string
+	LabelColor          string
+	SupportText         string
+	TermsText           string
+	CampaignDisplayMode string
+}
+
+func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCardMember) Pass {
+	design = normalizeStampCardDesign(design, member)
+	member.StampGoal = design.StampGoal
 	barcode := Barcode{
 		Format:          "PKBarcodeFormatQR",
 		Message:         member.BarcodeID,
 		MessageEncoding: "iso-8859-1",
 		AltText:         member.BarcodeID,
 	}
-	loyaltyProgram := loyaltyProgramName(member)
-
 	pass := Pass{
 		FormatVersion:      1,
 		PassTypeIdentifier: cfg.PassTypeID,
 		SerialNumber:       member.ID,
 		TeamIdentifier:     cfg.TeamID,
 		OrganizationName:   cfg.OrganizationName,
-		Description:        "F&B loyalty stamp card",
-		ForegroundColor:    "rgb(255, 255, 255)",
-		BackgroundColor:    "rgb(84, 52, 245)",
-		LabelColor:         "rgb(225, 220, 255)",
+		Description:        design.PassDescription,
+		ForegroundColor:    walletColor(design.ForegroundColor),
+		BackgroundColor:    walletColor(design.BackgroundColor),
+		LabelColor:         walletColor(design.LabelColor),
 		Barcodes:           []Barcode{barcode},
 		Barcode:            &barcode,
 		StoreCard: &PassStructure{
 			HeaderFields: []Field{
-				{Key: "stamps", Label: "Stamps", Value: stampProgress(member.StampCount, member.StampGoal)},
-			},
-			PrimaryFields: []Field{
-				{Key: "loyalty_program", Label: "10 STAMPS UNTIL NEXT REWARD", Value: loyaltyProgram},
-			},
-			SecondaryFields: []Field{
-				{Key: "member", Label: "Member", Value: member.FullName},
-			},
-			AuxiliaryFields: []Field{
 				{
-					Key:           "remaining",
-					Label:         "Remaining",
-					Value:         remainingStamps(member.StampCount, member.StampGoal),
-					ChangeMessage: "Enjoy your coffee! Only %@ until your next free treat.",
+					Key:           "stamps",
+					Label:         "Stamps",
+					Value:         stampProgress(member.StampCount, member.StampGoal),
+					ChangeMessage: "Your stamp progress is now %@.",
 				},
 			},
+			PrimaryFields: []Field{
+				{Key: "loyalty_program", Label: "Loyalty Card", Value: design.ProgramName},
+			},
 			BackFields: []Field{
+				{Key: "about", Label: "About", Value: design.PassDescription},
 				{Key: "member_id", Label: "Member ID", Value: member.ID},
-				{Key: "support", Label: "Support", Value: "Contact the merchant for loyalty card assistance."},
-				{Key: "terms", Label: "Terms", Value: "Collect one stamp for each eligible purchase. Rewards are subject to outlet terms."},
+				{Key: "support", Label: "Support", Value: design.SupportText},
+				{Key: "terms", Label: "Terms", Value: design.TermsText},
 			},
 		},
 		UserInfo: map[string]string{
 			"memberID":       member.ID,
-			"loyaltyProgram": loyaltyProgram,
+			"loyaltyProgram": design.ProgramName,
 			"stampCount":     stampProgress(member.StampCount, member.StampGoal),
 		},
 	}
 
-	if member.Promotion != "" {
-		pass.StoreCard.AuxiliaryFields = append(pass.StoreCard.AuxiliaryFields, Field{
-			Key:           "promotion",
-			Label:         "Promotion",
+	if design.CampaignDisplayMode == "details" && member.Promotion != "" {
+		pass.StoreCard.BackFields = append(pass.StoreCard.BackFields, Field{
+			Key:           "latest_offer",
+			Label:         "Latest Offer",
 			Value:         member.Promotion,
 			ChangeMessage: "New offer: %@",
 		})
@@ -133,6 +143,53 @@ func NewStampCardPass(cfg TemplateConfig, member StampCardMember) Pass {
 	return pass
 }
 
+func normalizeStampCardDesign(design StampCardDesign, member StampCardMember) StampCardDesign {
+	if design.ProgramName == "" {
+		design.ProgramName = loyaltyProgramName(member)
+	}
+	if design.PassDescription == "" {
+		design.PassDescription = "Digital loyalty stamp card"
+	}
+	if design.StampGoal <= 0 {
+		design.StampGoal = member.StampGoal
+	}
+	if design.StampGoal <= 0 {
+		design.StampGoal = 10
+	}
+	if design.BackgroundColor == "" {
+		design.BackgroundColor = "#5434F5"
+	}
+	if design.ForegroundColor == "" {
+		design.ForegroundColor = "#FFFFFF"
+	}
+	if design.LabelColor == "" {
+		design.LabelColor = "#E1DCFF"
+	}
+	if design.SupportText == "" {
+		design.SupportText = "Contact the merchant for loyalty card assistance."
+	}
+	if design.TermsText == "" {
+		design.TermsText = "Collect one stamp for each eligible purchase. Rewards are subject to outlet terms."
+	}
+	if design.CampaignDisplayMode == "" {
+		design.CampaignDisplayMode = "details"
+	}
+	return design
+}
+
+func walletColor(value string) string {
+	if len(value) != 7 || value[0] != '#' {
+		return value
+	}
+	r, errR := strconv.ParseUint(value[1:3], 16, 8)
+	g, errG := strconv.ParseUint(value[3:5], 16, 8)
+	b, errB := strconv.ParseUint(value[5:7], 16, 8)
+	if errR != nil || errG != nil || errB != nil {
+		return value
+	}
+	return fmt.Sprintf("rgb(%d, %d, %d)", r, g, b)
+}
+
 func loyaltyProgramName(member StampCardMember) string {
 	if member.RewardName != "" {
 		return member.RewardName
@@ -145,15 +202,4 @@ func loyaltyProgramName(member StampCardMember) string {
 
 func stampProgress(count int, goal int) string {
 	return fmt.Sprintf("%d / %d", count, goal)
-}
-
-func remainingStamps(count int, goal int) string {
-	remaining := goal - count
-	if remaining <= 0 {
-		return "Reward ready"
-	}
-	if remaining == 1 {
-		return "1 more"
-	}
-	return fmt.Sprintf("%d more", remaining)
 }

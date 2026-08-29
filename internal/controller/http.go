@@ -625,6 +625,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "apple wallet pass type not found")
 	case errors.Is(err, domain.ErrAppleWalletCertificateNotFound):
 		writeError(w, http.StatusNotFound, "apple wallet certificate not found")
+	case errors.Is(err, domain.ErrApplePassDesignNotFound):
+		writeError(w, http.StatusNotFound, "apple pass design not found")
 	case errors.Is(err, domain.ErrAppleWalletNotProvisioned):
 		writeError(w, http.StatusConflict, "apple wallet is not provisioned for merchant")
 	case errors.Is(err, domain.ErrAppleWalletConfigurationConflict):
@@ -677,8 +679,12 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
       width: 160px;
       height: 50px;
       border-radius: 0;
-      background: #fff;
       flex: 0 1 52%;
+      object-fit: contain;
+      object-position: left center;
+    }
+    .logo-placeholder {
+      background: #fff;
     }
     .header-field {
       text-align: right;
@@ -703,12 +709,6 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
     .primary .value {
       font-size: 30px;
       font-weight: 750;
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 18px;
-      padding: 0 24px 20px;
     }
     .barcode {
       background: #fff;
@@ -745,7 +745,11 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
   <main>
     <section class="pass" aria-label="Apple Wallet pass preview">
       <div class="top">
-        <div class="logo" aria-label="Merchant logo placeholder"></div>
+        {{if .LogoBase64}}
+        <img class="logo" src="data:image/png;base64,{{.LogoBase64}}" alt="Merchant logo">
+        {{else}}
+        <div class="logo logo-placeholder" aria-label="Merchant logo placeholder"></div>
+        {{end}}
         {{with index .Pass.StoreCard.HeaderFields 0}}
         <div class="header-field">
           <div class="label">{{.Label}}</div>
@@ -759,20 +763,6 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
         <div class="value">{{.Value}}</div>
       </div>
       {{end}}
-      <div class="grid">
-        {{range .Pass.StoreCard.SecondaryFields}}
-        <div>
-          <div class="label">{{.Label}}</div>
-          <div class="value">{{.Value}}</div>
-        </div>
-        {{end}}
-        {{range .Pass.StoreCard.AuxiliaryFields}}
-        <div>
-          <div class="label">{{.Label}}</div>
-          <div class="value">{{.Value}}</div>
-        </div>
-        {{end}}
-      </div>
       <div class="barcode">
         <img class="qr" src="{{.QRCodeURL}}" alt="QR code for {{.Barcode.AltText}}">
         <div class="alt">{{.Barcode.AltText}}</div>

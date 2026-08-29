@@ -11,6 +11,7 @@ import (
 	"image/color"
 	"image/draw"
 	"image/png"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,10 +21,11 @@ import (
 )
 
 type Generator struct {
-	SignerCertPath string
-	SignerKeyPath  string
-	WWDRCertPath   string
-	OpenSSLBin     string
+	SignerCertPath  string
+	SignerKeyPath   string
+	WWDRCertPath    string
+	OpenSSLBin      string
+	AssetBundlePath string
 }
 
 func (g Generator) Create(pass Pass) ([]byte, error) {
@@ -37,7 +39,7 @@ func (g Generator) Create(pass Pass) ([]byte, error) {
 	}
 	defer os.RemoveAll(workDir)
 
-	if err := writePassFiles(workDir, pass); err != nil {
+	if err := writePassFiles(workDir, pass, g.AssetBundlePath); err != nil {
 		return nil, err
 	}
 
@@ -77,19 +79,33 @@ func (g Generator) validate() error {
 			return fmt.Errorf("%s not readable at %q: %w", label, path, err)
 		}
 	}
+	if g.AssetBundlePath != "" {
+		info, err := os.Stat(g.AssetBundlePath)
+		if err != nil {
+			return fmt.Errorf("pass asset bundle not readable at %q: %w", g.AssetBundlePath, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("pass asset bundle %q is not a directory", g.AssetBundlePath)
+		}
+	}
 	return nil
 }
 
-func writePassFiles(dir string, pass Pass) error {
+func writePassFiles(dir string, pass Pass, assetBundlePath string) error {
 	if err := writeJSON(filepath.Join(dir, "pass.json"), pass); err != nil {
 		return err
+	}
+	if assetBundlePath != "" {
+		return copyPassAssets(dir, assetBundlePath)
 	}
 
 	assets := map[string]imageSpec{
 		"icon.png":    {29, 29, color.RGBA{84, 52, 245, 255}},
 		"icon@2x.png": {58, 58, color.RGBA{84, 52, 245, 255}},
+		"icon@3x.png": {87, 87, color.RGBA{84, 52, 245, 255}},
 		"logo.png":    {160, 50, color.RGBA{255, 255, 255, 255}},
 		"logo@2x.png": {320, 100, color.RGBA{255, 255, 255, 255}},
+		"logo@3x.png": {480, 150, color.RGBA{255, 255, 255, 255}},
 	}
 
 	for name, spec := range assets {
@@ -98,6 +114,30 @@ func writePassFiles(dir string, pass Pass) error {
 		}
 	}
 
+	return nil
+}
+
+func copyPassAssets(destination string, source string) error {
+	for _, name := range []string{"icon.png", "icon@2x.png", "icon@3x.png", "logo.png", "logo@2x.png", "logo@3x.png"} {
+		input, err := os.Open(filepath.Join(source, name))
+		if err != nil {
+			return fmt.Errorf("open pass asset %s: %w", name, err)
+		}
+		output, err := os.Create(filepath.Join(destination, name))
+		if err != nil {
+			_ = input.Close()
+			return fmt.Errorf("create pass asset %s: %w", name, err)
+		}
+		_, copyErr := io.Copy(output, input)
+		inputCloseErr := input.Close()
+		outputCloseErr := output.Close()
+		if copyErr != nil {
+			return fmt.Errorf("copy pass asset %s: %w", name, copyErr)
+		}
+		if inputCloseErr != nil || outputCloseErr != nil {
+			return fmt.Errorf("close pass asset %s", name)
+		}
+	}
 	return nil
 }
 

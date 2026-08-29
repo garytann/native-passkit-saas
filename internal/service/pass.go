@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,11 +19,11 @@ import (
 
 type PassService struct {
 	cfg          config.Config
-	generator    applepass.Generator
 	repo         MemberRepository
 	walletPasses WalletPassRepository
 	campaigns    ActiveCampaignRepository
 	credentials  AppleWalletCredentialResolver
+	designs      ApplePassDesignResolver
 	linker       PassLinker
 	timeout      time.Duration
 }
@@ -42,17 +45,12 @@ type PassPreview struct {
 	PassURL    string
 	PreviewURL string
 	QRCodeURL  string
+	LogoBase64 string
 }
 
 func NewPassService(cfg config.Config, repo MemberRepository, linker PassLinker) PassService {
 	return PassService{
-		cfg: cfg,
-		generator: applepass.Generator{
-			SignerCertPath: cfg.PassCertPath,
-			SignerKeyPath:  cfg.PassKeyPath,
-			WWDRCertPath:   cfg.WWDRCertPath,
-			OpenSSLBin:     cfg.OpenSSLBin,
-		},
+		cfg:     cfg,
 		repo:    repo,
 		linker:  linker,
 		timeout: 5 * time.Second,
@@ -70,6 +68,9 @@ func NewPassServiceWithWalletPassesAndCampaigns(cfg config.Config, repo MemberRe
 	service.campaigns = campaigns
 	if len(credentialResolvers) > 0 {
 		service.credentials = credentialResolvers[0]
+		if designs, ok := credentialResolvers[0].(ApplePassDesignResolver); ok {
+			service.designs = designs
+		}
 	}
 	return service
 }
@@ -98,11 +99,11 @@ func (s PassService) createPackage(ctx context.Context, memberID string, expecte
 	if expectedPassTypeIdentifier != "" && credential.PassTypeIdentifier != expectedPassTypeIdentifier {
 		return nil, ErrUnauthorized
 	}
-	pass, err := s.stampCardPass(ctx, member, credential)
+	pass, design, err := s.stampCardPass(ctx, member, credential)
 	if err != nil {
 		return nil, err
 	}
-	data, err := s.generatorFor(credential).Create(pass)
+	data, err := s.generatorFor(credential, design).Create(pass)
 	if err != nil {
 		return nil, fmt.Errorf("create pass package: %w", err)
 	}
@@ -120,7 +121,7 @@ func (s PassService) Preview(ctx context.Context, memberID string) (PassPreview,
 	if err != nil {
 		return PassPreview{}, err
 	}
-	pass, err := s.stampCardPass(ctx, member, credential)
+	pass, design, err := s.stampCardPass(ctx, member, credential)
 	if err != nil {
 		return PassPreview{}, err
 	}
@@ -136,6 +137,7 @@ func (s PassService) Preview(ctx context.Context, memberID string) (PassPreview,
 		PassURL:    s.linker.PassURL(memberID),
 		PreviewURL: s.linker.PreviewURL(memberID),
 		QRCodeURL:  s.linker.QRCodeURL(memberID),
+		LogoBase64: s.previewLogo(design),
 	}, nil
 }
 
@@ -229,19 +231,34 @@ func (s PassService) MarkPassUpdated(ctx context.Context, serialNumber string) e
 	return nil
 }
 
-func (s PassService) stampCardPass(ctx context.Context, member applepass.StampCardMember, credential domain.ActiveAppleWalletCredential) (applepass.Pass, error) {
+func (s PassService) stampCardPass(ctx context.Context, member applepass.StampCardMember, credential domain.ActiveAppleWalletCredential) (applepass.Pass, domain.ApplePassDesign, error) {
 	walletPass, err := s.ensureWalletPass(ctx, credential.PassTypeIdentifier, member.ID)
 	if err != nil {
-		return applepass.Pass{}, err
+		return applepass.Pass{}, domain.ApplePassDesign{}, err
+	}
+	design, err := s.activeDesign(ctx, credential.ApplePassTypeID, member)
+	if err != nil {
+		return applepass.Pass{}, domain.ApplePassDesign{}, err
 	}
 
-	return applepass.NewStampCardPass(applepass.TemplateConfig{
+	pass := applepass.NewStampCardPass(applepass.TemplateConfig{
 		PassTypeID:          credential.PassTypeIdentifier,
 		TeamID:              credential.TeamIdentifier,
 		OrganizationName:    credential.OrganizationName,
 		WebServiceURL:       s.appleWebServiceURL(),
 		AuthenticationToken: walletPass.AuthenticationToken,
-	}, member), nil
+	}, applepass.StampCardDesign{
+		ProgramName:         design.ProgramName,
+		PassDescription:     design.PassDescription,
+		StampGoal:           design.StampGoal,
+		BackgroundColor:     design.BackgroundColor,
+		ForegroundColor:     design.ForegroundColor,
+		LabelColor:          design.LabelColor,
+		SupportText:         design.SupportText,
+		TermsText:           design.TermsText,
+		CampaignDisplayMode: design.CampaignDisplayMode,
+	}, member)
+	return pass, design, nil
 }
 
 func (s PassService) ensureWalletPass(ctx context.Context, passTypeIdentifier string, serialNumber string) (domain.WalletPass, error) {
@@ -292,13 +309,66 @@ func (s PassService) activeCredential(ctx context.Context, merchant string) (dom
 	}, nil
 }
 
-func (s PassService) generatorFor(credential domain.ActiveAppleWalletCredential) applepass.Generator {
+func (s PassService) generatorFor(credential domain.ActiveAppleWalletCredential, design domain.ApplePassDesign) applepass.Generator {
 	return applepass.Generator{
-		SignerCertPath: credential.CertificateRef,
-		SignerKeyPath:  credential.PrivateKeyRef,
-		WWDRCertPath:   s.cfg.WWDRCertPath,
-		OpenSSLBin:     s.cfg.OpenSSLBin,
+		SignerCertPath:  credential.CertificateRef,
+		SignerKeyPath:   credential.PrivateKeyRef,
+		WWDRCertPath:    s.cfg.WWDRCertPath,
+		OpenSSLBin:      s.cfg.OpenSSLBin,
+		AssetBundlePath: s.assetBundlePath(design),
 	}
+}
+
+func (s PassService) activeDesign(ctx context.Context, applePassTypeID string, member applepass.StampCardMember) (domain.ApplePassDesign, error) {
+	if s.designs != nil && strings.TrimSpace(applePassTypeID) != "" {
+		design, err := s.designs.ResolveActivePassDesign(ctx, applePassTypeID)
+		if err == nil {
+			return design, nil
+		}
+		if !errors.Is(err, domain.ErrApplePassDesignNotFound) {
+			return domain.ApplePassDesign{}, err
+		}
+	}
+	programName := strings.TrimSpace(member.RewardName)
+	if programName == "" {
+		brandName := strings.TrimSpace(member.BrandName)
+		if brandName == "" {
+			programName = "Loyalty Program"
+		} else {
+			programName = brandName + " Loyalty Program"
+		}
+	}
+	return domain.ApplePassDesign{
+		ProgramName:         strings.TrimSpace(programName),
+		PassDescription:     "Digital loyalty stamp card",
+		StampGoal:           10,
+		BackgroundColor:     "#5434F5",
+		ForegroundColor:     "#FFFFFF",
+		LabelColor:          "#E1DCFF",
+		SupportText:         "Contact the merchant for loyalty card assistance.",
+		TermsText:           "Collect one stamp for each eligible purchase. Rewards are subject to outlet terms.",
+		CampaignDisplayMode: "details",
+		Status:              "active",
+	}, nil
+}
+
+func (s PassService) assetBundlePath(design domain.ApplePassDesign) string {
+	if strings.TrimSpace(design.AssetBundleRef) == "" || strings.TrimSpace(s.cfg.PassAssetBasePath) == "" {
+		return ""
+	}
+	return filepath.Join(s.cfg.PassAssetBasePath, design.AssetBundleRef)
+}
+
+func (s PassService) previewLogo(design domain.ApplePassDesign) string {
+	assetPath := s.assetBundlePath(design)
+	if assetPath == "" {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(assetPath, "logo@2x.png"))
+	if err != nil {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(data)
 }
 
 func (s PassService) appleWebServiceURL() string {

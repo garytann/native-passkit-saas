@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"native-ios-passkit-wip/internal/domain"
 )
 
@@ -55,6 +56,29 @@ type appleSigningCertificateModel struct {
 	Status                 string     `gorm:"column:status;not null"`
 	CreatedAt              time.Time  `gorm:"column:created_at;default:now()"`
 	ActivatedAt            *time.Time `gorm:"column:activated_at"`
+}
+
+type applePassDesignModel struct {
+	DesignID            string    `gorm:"column:design_id;primaryKey"`
+	ApplePassTypeID     string    `gorm:"column:apple_pass_type_id;uniqueIndex;not null"`
+	ProgramName         string    `gorm:"column:program_name;not null"`
+	PassDescription     string    `gorm:"column:pass_description;not null"`
+	StampGoal           int       `gorm:"column:stamp_goal;not null"`
+	BackgroundColor     string    `gorm:"column:background_color;not null"`
+	ForegroundColor     string    `gorm:"column:foreground_color;not null"`
+	LabelColor          string    `gorm:"column:label_color;not null"`
+	AssetBundleRef      string    `gorm:"column:asset_bundle_ref;not null"`
+	SupportText         string    `gorm:"column:support_text;not null"`
+	TermsText           string    `gorm:"column:terms_text;not null"`
+	CampaignDisplayMode string    `gorm:"column:campaign_display_mode;not null"`
+	Status              string    `gorm:"column:status;not null"`
+	Version             int       `gorm:"column:version;not null"`
+	CreatedAt           time.Time `gorm:"column:created_at;default:now()"`
+	UpdatedAt           time.Time `gorm:"column:updated_at;default:now()"`
+}
+
+func (applePassDesignModel) TableName() string {
+	return "apple_pass_designs"
 }
 
 func (appleSigningCertificateModel) TableName() string {
@@ -203,6 +227,110 @@ func (r AppleWalletRepository) ActivateCertificate(ctx context.Context, input do
 	return appleSigningCertificateFromModel(activated), nil
 }
 
+func (r AppleWalletRepository) UpsertPassDesign(ctx context.Context, input domain.UpsertApplePassDesignInput) (domain.ApplePassDesign, error) {
+	var saved applePassDesignModel
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		passType, err := findPassTypeForMerchant(tx, input.MerchantID, input.PassTypeIdentifier)
+		if err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		saved = applePassDesignModel{
+			DesignID:            input.DesignID,
+			ApplePassTypeID:     passType.ApplePassTypeID,
+			ProgramName:         input.ProgramName,
+			PassDescription:     input.PassDescription,
+			StampGoal:           input.StampGoal,
+			BackgroundColor:     input.BackgroundColor,
+			ForegroundColor:     input.ForegroundColor,
+			LabelColor:          input.LabelColor,
+			AssetBundleRef:      input.AssetBundleRef,
+			SupportText:         input.SupportText,
+			TermsText:           input.TermsText,
+			CampaignDisplayMode: input.CampaignDisplayMode,
+			Status:              "active",
+			Version:             1,
+			UpdatedAt:           now,
+		}
+		updates := map[string]any{
+			"program_name":          input.ProgramName,
+			"pass_description":      input.PassDescription,
+			"stamp_goal":            input.StampGoal,
+			"background_color":      input.BackgroundColor,
+			"foreground_color":      input.ForegroundColor,
+			"label_color":           input.LabelColor,
+			"asset_bundle_ref":      input.AssetBundleRef,
+			"support_text":          input.SupportText,
+			"terms_text":            input.TermsText,
+			"campaign_display_mode": input.CampaignDisplayMode,
+			"status":                "active",
+			"version":               gorm.Expr("apple_pass_designs.version + 1"),
+			"updated_at":            now,
+		}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "apple_pass_type_id"}},
+			DoUpdates: clause.Assignments(updates),
+		}).Create(&saved).Error; err != nil {
+			return fmt.Errorf("upsert apple pass design: %w", err)
+		}
+		if err := tx.Where("apple_pass_type_id = ?", passType.ApplePassTypeID).Take(&saved).Error; err != nil {
+			return fmt.Errorf("load upserted apple pass design: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return domain.ApplePassDesign{}, err
+	}
+	return applePassDesignFromModel(saved), nil
+}
+
+func (r AppleWalletRepository) GetPassDesign(ctx context.Context, merchantID string, passTypeIdentifier string) (domain.ApplePassDesign, error) {
+	var model applePassDesignModel
+	err := r.db.WithContext(ctx).Table("apple_pass_designs AS design").
+		Select("design.*").
+		Joins("INNER JOIN apple_pass_types AS apt ON apt.apple_pass_type_id = design.apple_pass_type_id").
+		Joins("INNER JOIN apple_wallet_issuers AS awi ON awi.issuer_id = apt.issuer_id").
+		Where("awi.merchant_id = ? AND apt.pass_type_identifier = ?", merchantID, passTypeIdentifier).
+		Take(&model).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.ApplePassDesign{}, domain.ErrApplePassDesignNotFound
+		}
+		return domain.ApplePassDesign{}, fmt.Errorf("get apple pass design: %w", err)
+	}
+	return applePassDesignFromModel(model), nil
+}
+
+func (r AppleWalletRepository) ResolveActivePassDesign(ctx context.Context, applePassTypeID string) (domain.ApplePassDesign, error) {
+	var model applePassDesignModel
+	err := r.db.WithContext(ctx).
+		Where("apple_pass_type_id = ? AND status = ?", applePassTypeID, "active").
+		Take(&model).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.ApplePassDesign{}, domain.ErrApplePassDesignNotFound
+		}
+		return domain.ApplePassDesign{}, fmt.Errorf("resolve active apple pass design: %w", err)
+	}
+	return applePassDesignFromModel(model), nil
+}
+
+func findPassTypeForMerchant(db *gorm.DB, merchantID string, passTypeIdentifier string) (applePassTypeModel, error) {
+	var passType applePassTypeModel
+	err := db.Table("apple_pass_types AS apt").
+		Select("apt.*").
+		Joins("INNER JOIN apple_wallet_issuers AS awi ON awi.issuer_id = apt.issuer_id").
+		Where("awi.merchant_id = ? AND apt.pass_type_identifier = ?", merchantID, passTypeIdentifier).
+		Take(&passType).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return applePassTypeModel{}, domain.ErrAppleWalletPassTypeNotFound
+		}
+		return applePassTypeModel{}, fmt.Errorf("find apple pass type: %w", err)
+	}
+	return passType, nil
+}
+
 func (r AppleWalletRepository) ConfigurationByMerchantID(ctx context.Context, merchantID string) (domain.AppleWalletConfiguration, error) {
 	issuer, err := r.GetIssuerByMerchantID(ctx, merchantID)
 	if err != nil {
@@ -221,6 +349,7 @@ func (r AppleWalletRepository) ConfigurationByMerchantID(ctx context.Context, me
 	}
 
 	certificates := make([]domain.AppleSigningCertificate, 0)
+	designs := make([]domain.ApplePassDesign, 0)
 	if len(passTypeIDs) > 0 {
 		var certificateModels []appleSigningCertificateModel
 		if err := r.db.WithContext(ctx).
@@ -232,12 +361,24 @@ func (r AppleWalletRepository) ConfigurationByMerchantID(ctx context.Context, me
 		for _, model := range certificateModels {
 			certificates = append(certificates, appleSigningCertificateFromModel(model))
 		}
+
+		var designModels []applePassDesignModel
+		if err := r.db.WithContext(ctx).
+			Where("apple_pass_type_id IN ?", passTypeIDs).
+			Order("created_at ASC").
+			Find(&designModels).Error; err != nil {
+			return domain.AppleWalletConfiguration{}, fmt.Errorf("list apple pass designs: %w", err)
+		}
+		for _, model := range designModels {
+			designs = append(designs, applePassDesignFromModel(model))
+		}
 	}
 
 	return domain.AppleWalletConfiguration{
 		Issuer:       issuer,
 		PassTypes:    passTypes,
 		Certificates: certificates,
+		Designs:      designs,
 	}, nil
 }
 
@@ -340,6 +481,27 @@ func appleSigningCertificateFromModel(model appleSigningCertificateModel) domain
 		Status:                 model.Status,
 		CreatedAt:              model.CreatedAt,
 		ActivatedAt:            model.ActivatedAt,
+	}
+}
+
+func applePassDesignFromModel(model applePassDesignModel) domain.ApplePassDesign {
+	return domain.ApplePassDesign{
+		DesignID:            model.DesignID,
+		ApplePassTypeID:     model.ApplePassTypeID,
+		ProgramName:         model.ProgramName,
+		PassDescription:     model.PassDescription,
+		StampGoal:           model.StampGoal,
+		BackgroundColor:     model.BackgroundColor,
+		ForegroundColor:     model.ForegroundColor,
+		LabelColor:          model.LabelColor,
+		AssetBundleRef:      model.AssetBundleRef,
+		SupportText:         model.SupportText,
+		TermsText:           model.TermsText,
+		CampaignDisplayMode: model.CampaignDisplayMode,
+		Status:              model.Status,
+		Version:             model.Version,
+		CreatedAt:           model.CreatedAt,
+		UpdatedAt:           model.UpdatedAt,
 	}
 }
 

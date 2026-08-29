@@ -6,6 +6,9 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"image"
+	"image/color"
+	"image/png"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -45,6 +48,34 @@ func TestValidateAppleCertificateRejectsWrongPassType(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("expected mismatched Pass Type ID to fail validation")
+	}
+}
+
+func TestValidatePassAssetBundleAcceptsScaledPNGAssets(t *testing.T) {
+	directory := t.TempDir()
+	writeTestPNG(t, filepath.Join(directory, "icon.png"), 29, 29)
+	writeTestPNG(t, filepath.Join(directory, "icon@2x.png"), 58, 58)
+	writeTestPNG(t, filepath.Join(directory, "icon@3x.png"), 87, 87)
+	writeTestPNG(t, filepath.Join(directory, "logo.png"), 160, 50)
+	writeTestPNG(t, filepath.Join(directory, "logo@2x.png"), 320, 100)
+	writeTestPNG(t, filepath.Join(directory, "logo@3x.png"), 480, 150)
+
+	if err := validatePassAssetBundle(directory); err != nil {
+		t.Fatalf("expected valid asset bundle, got %v", err)
+	}
+}
+
+func TestValidatePassAssetBundleRejectsIncorrectScale(t *testing.T) {
+	directory := t.TempDir()
+	writeTestPNG(t, filepath.Join(directory, "icon.png"), 29, 29)
+	writeTestPNG(t, filepath.Join(directory, "icon@2x.png"), 58, 58)
+	writeTestPNG(t, filepath.Join(directory, "icon@3x.png"), 86, 86)
+	writeTestPNG(t, filepath.Join(directory, "logo.png"), 160, 50)
+	writeTestPNG(t, filepath.Join(directory, "logo@2x.png"), 320, 100)
+	writeTestPNG(t, filepath.Join(directory, "logo@3x.png"), 480, 150)
+
+	if err := validatePassAssetBundle(directory); err == nil {
+		t.Fatal("expected incorrectly scaled asset bundle to fail")
 	}
 }
 
@@ -107,5 +138,22 @@ func writePEMFile(t *testing.T, path string, blockType string, der []byte, mode 
 	data := pem.EncodeToMemory(&pem.Block{Type: blockType, Bytes: der})
 	if err := os.WriteFile(path, data, mode); err != nil {
 		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func writeTestPNG(t *testing.T, path string, width int, height int) {
+	t.Helper()
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create %s: %v", path, err)
+	}
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	img.Set(0, 0, color.White)
+	if err := png.Encode(file, img); err != nil {
+		_ = file.Close()
+		t.Fatalf("encode %s: %v", path, err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close %s: %v", path, err)
 	}
 }

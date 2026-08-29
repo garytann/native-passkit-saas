@@ -39,6 +39,20 @@ type provisionAppleCertificateRequest struct {
 	CredentialAlias    string `json:"credential_alias"`
 }
 
+type upsertApplePassDesignRequest struct {
+	PassTypeIdentifier  string `json:"pass_type_identifier"`
+	ProgramName         string `json:"program_name"`
+	PassDescription     string `json:"pass_description"`
+	StampGoal           int    `json:"stamp_goal"`
+	BackgroundColor     string `json:"background_color"`
+	ForegroundColor     string `json:"foreground_color"`
+	LabelColor          string `json:"label_color"`
+	AssetBundleRef      string `json:"asset_bundle_ref"`
+	SupportText         string `json:"support_text"`
+	TermsText           string `json:"terms_text"`
+	CampaignDisplayMode string `json:"campaign_display_mode"`
+}
+
 func (c AppleWalletAdminController) Routes(w http.ResponseWriter, r *http.Request) {
 	if !c.authorize(w, r) {
 		return
@@ -58,6 +72,10 @@ func (c AppleWalletAdminController) Routes(w http.ResponseWriter, r *http.Reques
 		c.createPassType(w, r, merchantID)
 	case action == "certificates" && r.Method == http.MethodPost:
 		c.provisionCertificate(w, r, merchantID)
+	case action == "pass-design" && r.Method == http.MethodGet:
+		c.passDesign(w, r, merchantID)
+	case action == "pass-design" && r.Method == http.MethodPut:
+		c.upsertPassDesign(w, r, merchantID)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
@@ -125,6 +143,42 @@ func (c AppleWalletAdminController) provisionCertificate(w http.ResponseWriter, 
 		return
 	}
 	writeJSON(w, http.StatusCreated, certificate)
+}
+
+func (c AppleWalletAdminController) passDesign(w http.ResponseWriter, r *http.Request, merchantID string) {
+	design, err := c.wallet.PassDesign(r.Context(), merchantID, r.URL.Query().Get("pass_type_identifier"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, design)
+}
+
+func (c AppleWalletAdminController) upsertPassDesign(w http.ResponseWriter, r *http.Request, merchantID string) {
+	var request upsertApplePassDesignRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request body")
+		return
+	}
+	design, err := c.wallet.UpsertPassDesign(r.Context(), service.UpsertApplePassDesignRequest{
+		MerchantID:          merchantID,
+		PassTypeIdentifier:  request.PassTypeIdentifier,
+		ProgramName:         request.ProgramName,
+		PassDescription:     request.PassDescription,
+		StampGoal:           request.StampGoal,
+		BackgroundColor:     request.BackgroundColor,
+		ForegroundColor:     request.ForegroundColor,
+		LabelColor:          request.LabelColor,
+		AssetBundleRef:      request.AssetBundleRef,
+		SupportText:         request.SupportText,
+		TermsText:           request.TermsText,
+		CampaignDisplayMode: request.CampaignDisplayMode,
+	})
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, design)
 }
 
 func (c AppleWalletAdminController) authorize(w http.ResponseWriter, r *http.Request) bool {

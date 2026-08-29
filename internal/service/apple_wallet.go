@@ -12,6 +12,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/png"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -30,6 +32,9 @@ type AppleWalletRepository interface {
 	ConfigurationByMerchantID(ctx context.Context, merchantID string) (domain.AppleWalletConfiguration, error)
 	ResolveActiveByMerchant(ctx context.Context, merchant string) (domain.ActiveAppleWalletCredential, error)
 	ResolveActiveByPassType(ctx context.Context, passTypeIdentifier string) (domain.ActiveAppleWalletCredential, error)
+	UpsertPassDesign(ctx context.Context, input domain.UpsertApplePassDesignInput) (domain.ApplePassDesign, error)
+	GetPassDesign(ctx context.Context, merchantID string, passTypeIdentifier string) (domain.ApplePassDesign, error)
+	ResolveActivePassDesign(ctx context.Context, applePassTypeID string) (domain.ApplePassDesign, error)
 }
 
 type AppleWalletCredentialResolver interface {
@@ -37,9 +42,14 @@ type AppleWalletCredentialResolver interface {
 	ResolveActiveByPassType(ctx context.Context, passTypeIdentifier string) (domain.ActiveAppleWalletCredential, error)
 }
 
+type ApplePassDesignResolver interface {
+	ResolveActivePassDesign(ctx context.Context, applePassTypeID string) (domain.ApplePassDesign, error)
+}
+
 type AppleWalletService struct {
 	repo                AppleWalletRepository
 	certificateBasePath string
+	assetBasePath       string
 	wwdrCertPath        string
 	timeout             time.Duration
 }
@@ -63,14 +73,31 @@ type ProvisionAppleCertificateRequest struct {
 	CredentialAlias    string
 }
 
+type UpsertApplePassDesignRequest struct {
+	MerchantID          string
+	PassTypeIdentifier  string
+	ProgramName         string
+	PassDescription     string
+	StampGoal           int
+	BackgroundColor     string
+	ForegroundColor     string
+	LabelColor          string
+	AssetBundleRef      string
+	SupportText         string
+	TermsText           string
+	CampaignDisplayMode string
+}
+
 var credentialAliasPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 var passTypeIdentifierPattern = regexp.MustCompile(`^pass\.[A-Za-z0-9.-]+$`)
+var hexColorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 var subjectUIDOID = asn1.ObjectIdentifier{0, 9, 2342, 19200300, 100, 1, 1}
 
 func NewAppleWalletService(cfg config.Config, repo AppleWalletRepository) AppleWalletService {
 	return AppleWalletService{
 		repo:                repo,
 		certificateBasePath: strings.TrimSpace(cfg.CertificateBasePath),
+		assetBasePath:       strings.TrimSpace(cfg.PassAssetBasePath),
 		wwdrCertPath:        strings.TrimSpace(cfg.WWDRCertPath),
 		timeout:             5 * time.Second,
 	}
@@ -209,6 +236,177 @@ func (s AppleWalletService) ProvisionCertificate(ctx context.Context, input Prov
 		ValidFrom:              metadata.ValidFrom,
 		ExpiresAt:              metadata.ExpiresAt,
 	})
+}
+
+func (s AppleWalletService) PassDesign(ctx context.Context, merchantID string, passTypeIdentifier string) (domain.ApplePassDesign, error) {
+	if s.repo == nil {
+		return domain.ApplePassDesign{}, ErrRepositoryUnavailable
+	}
+	merchantID = strings.TrimSpace(merchantID)
+	passTypeIdentifier = strings.TrimSpace(passTypeIdentifier)
+	if merchantID == "" {
+		return domain.ApplePassDesign{}, ValidationError{Message: "merchant id is required"}
+	}
+	if !passTypeIdentifierPattern.MatchString(passTypeIdentifier) {
+		return domain.ApplePassDesign{}, ValidationError{Message: "pass_type_identifier is invalid"}
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	return s.repo.GetPassDesign(ctx, merchantID, passTypeIdentifier)
+}
+
+func (s AppleWalletService) UpsertPassDesign(ctx context.Context, input UpsertApplePassDesignRequest) (domain.ApplePassDesign, error) {
+	if s.repo == nil {
+		return domain.ApplePassDesign{}, ErrRepositoryUnavailable
+	}
+	normalizePassDesignRequest(&input)
+	if err := validatePassDesignRequest(input); err != nil {
+		return domain.ApplePassDesign{}, err
+	}
+	if input.AssetBundleRef != "" {
+		if s.assetBasePath == "" {
+			return domain.ApplePassDesign{}, ValidationError{Message: "apple pass asset base path is not configured"}
+		}
+		if err := validatePassAssetBundle(filepath.Join(s.assetBasePath, input.AssetBundleRef)); err != nil {
+			return domain.ApplePassDesign{}, ValidationError{Message: err.Error()}
+		}
+	}
+
+	designID, err := domain.NewApplePassDesignID()
+	if err != nil {
+		return domain.ApplePassDesign{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	return s.repo.UpsertPassDesign(ctx, domain.UpsertApplePassDesignInput{
+		DesignID:            designID,
+		MerchantID:          input.MerchantID,
+		PassTypeIdentifier:  input.PassTypeIdentifier,
+		ProgramName:         input.ProgramName,
+		PassDescription:     input.PassDescription,
+		StampGoal:           input.StampGoal,
+		BackgroundColor:     strings.ToUpper(input.BackgroundColor),
+		ForegroundColor:     strings.ToUpper(input.ForegroundColor),
+		LabelColor:          strings.ToUpper(input.LabelColor),
+		AssetBundleRef:      input.AssetBundleRef,
+		SupportText:         input.SupportText,
+		TermsText:           input.TermsText,
+		CampaignDisplayMode: input.CampaignDisplayMode,
+	})
+}
+
+func (s AppleWalletService) ResolveActivePassDesign(ctx context.Context, applePassTypeID string) (domain.ApplePassDesign, error) {
+	if s.repo == nil {
+		return domain.ApplePassDesign{}, ErrRepositoryUnavailable
+	}
+	return s.repo.ResolveActivePassDesign(ctx, strings.TrimSpace(applePassTypeID))
+}
+
+func normalizePassDesignRequest(input *UpsertApplePassDesignRequest) {
+	input.MerchantID = strings.TrimSpace(input.MerchantID)
+	input.PassTypeIdentifier = strings.TrimSpace(input.PassTypeIdentifier)
+	input.ProgramName = strings.TrimSpace(input.ProgramName)
+	input.PassDescription = strings.TrimSpace(input.PassDescription)
+	input.BackgroundColor = strings.TrimSpace(input.BackgroundColor)
+	input.ForegroundColor = strings.TrimSpace(input.ForegroundColor)
+	input.LabelColor = strings.TrimSpace(input.LabelColor)
+	input.AssetBundleRef = strings.TrimSpace(strings.ToLower(input.AssetBundleRef))
+	input.SupportText = strings.TrimSpace(input.SupportText)
+	input.TermsText = strings.TrimSpace(input.TermsText)
+	input.CampaignDisplayMode = strings.TrimSpace(strings.ToLower(input.CampaignDisplayMode))
+	if input.StampGoal == 0 {
+		input.StampGoal = 10
+	}
+	if input.BackgroundColor == "" {
+		input.BackgroundColor = "#5434F5"
+	}
+	if input.ForegroundColor == "" {
+		input.ForegroundColor = "#FFFFFF"
+	}
+	if input.LabelColor == "" {
+		input.LabelColor = "#E1DCFF"
+	}
+	if input.SupportText == "" {
+		input.SupportText = "Contact the merchant for loyalty card assistance."
+	}
+	if input.TermsText == "" {
+		input.TermsText = "Collect one stamp for each eligible purchase. Rewards are subject to outlet terms."
+	}
+	if input.CampaignDisplayMode == "" {
+		input.CampaignDisplayMode = "details"
+	}
+}
+
+func validatePassDesignRequest(input UpsertApplePassDesignRequest) error {
+	switch {
+	case input.MerchantID == "":
+		return ValidationError{Message: "merchant id is required"}
+	case !passTypeIdentifierPattern.MatchString(input.PassTypeIdentifier):
+		return ValidationError{Message: "pass_type_identifier is invalid"}
+	case input.ProgramName == "":
+		return ValidationError{Message: "program_name is required"}
+	case len(input.ProgramName) > 80:
+		return ValidationError{Message: "program_name must be 80 characters or fewer"}
+	case input.PassDescription == "":
+		return ValidationError{Message: "pass_description is required"}
+	case len(input.PassDescription) > 160:
+		return ValidationError{Message: "pass_description must be 160 characters or fewer"}
+	case input.StampGoal < 1 || input.StampGoal > 100:
+		return ValidationError{Message: "stamp_goal must be between 1 and 100"}
+	case !hexColorPattern.MatchString(input.BackgroundColor), !hexColorPattern.MatchString(input.ForegroundColor), !hexColorPattern.MatchString(input.LabelColor):
+		return ValidationError{Message: "pass colors must use six-digit hex values such as #5434F5"}
+	case input.AssetBundleRef != "" && !credentialAliasPattern.MatchString(input.AssetBundleRef):
+		return ValidationError{Message: "asset_bundle_ref must contain lowercase letters, numbers, or hyphens"}
+	case input.CampaignDisplayMode != "none" && input.CampaignDisplayMode != "details":
+		return ValidationError{Message: "campaign_display_mode must be none or details"}
+	}
+	return nil
+}
+
+var requiredPassAssets = []string{
+	"icon.png", "icon@2x.png", "icon@3x.png",
+	"logo.png", "logo@2x.png", "logo@3x.png",
+}
+
+func validatePassAssetBundle(directory string) error {
+	dimensions := make(map[string]image.Config, len(requiredPassAssets))
+	for _, name := range requiredPassAssets {
+		path := filepath.Join(directory, name)
+		file, err := os.Open(path)
+		if err != nil {
+			return fmt.Errorf("pass asset %s is not readable: %w", name, err)
+		}
+		cfg, _, decodeErr := image.DecodeConfig(file)
+		closeErr := file.Close()
+		if decodeErr != nil {
+			return fmt.Errorf("pass asset %s is not a valid PNG: %w", name, decodeErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close pass asset %s: %w", name, closeErr)
+		}
+		if cfg.Width <= 0 || cfg.Height <= 0 {
+			return fmt.Errorf("pass asset %s has invalid dimensions", name)
+		}
+		dimensions[name] = cfg
+	}
+	icon := dimensions["icon.png"]
+	if icon.Width != icon.Height || icon.Width > 38 {
+		return fmt.Errorf("icon.png must be square and no larger than 38 x 38 pixels")
+	}
+	logo := dimensions["logo.png"]
+	if logo.Width > 160 || logo.Height > 50 {
+		return fmt.Errorf("logo.png must be no larger than 160 x 50 pixels")
+	}
+	for _, asset := range []string{"icon", "logo"} {
+		base := dimensions[asset+".png"]
+		for scale, suffix := range map[int]string{2: "@2x.png", 3: "@3x.png"} {
+			scaled := dimensions[asset+suffix]
+			if scaled.Width != base.Width*scale || scaled.Height != base.Height*scale {
+				return fmt.Errorf("%s%s must be exactly %dx the dimensions of %s.png", asset, suffix, scale, asset)
+			}
+		}
+	}
+	return nil
 }
 
 func (s AppleWalletService) ResolveActiveByMerchant(ctx context.Context, merchant string) (domain.ActiveAppleWalletCredential, error) {

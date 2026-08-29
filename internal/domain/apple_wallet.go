@@ -8,6 +8,7 @@ import (
 var ErrAppleWalletIssuerNotFound = errors.New("apple wallet issuer not found")
 var ErrAppleWalletPassTypeNotFound = errors.New("apple wallet pass type not found")
 var ErrAppleWalletCertificateNotFound = errors.New("apple wallet certificate not found")
+var ErrApplePassDesignNotFound = errors.New("apple pass design not found")
 var ErrAppleWalletNotProvisioned = errors.New("apple wallet is not provisioned for merchant")
 var ErrAppleWalletConfigurationConflict = errors.New("apple wallet configuration already exists")
 
@@ -70,6 +71,41 @@ type AppleSigningCertificate struct {
 	ActivatedAt            *time.Time `json:"activated_at,omitempty"`
 }
 
+type ApplePassDesign struct {
+	DesignID            string    `json:"design_id"`
+	ApplePassTypeID     string    `json:"apple_pass_type_id"`
+	ProgramName         string    `json:"program_name"`
+	PassDescription     string    `json:"pass_description"`
+	StampGoal           int       `json:"stamp_goal"`
+	BackgroundColor     string    `json:"background_color"`
+	ForegroundColor     string    `json:"foreground_color"`
+	LabelColor          string    `json:"label_color"`
+	AssetBundleRef      string    `json:"asset_bundle_ref"`
+	SupportText         string    `json:"support_text"`
+	TermsText           string    `json:"terms_text"`
+	CampaignDisplayMode string    `json:"campaign_display_mode"`
+	Status              string    `json:"status"`
+	Version             int       `json:"version"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
+}
+
+type UpsertApplePassDesignInput struct {
+	DesignID            string
+	MerchantID          string
+	PassTypeIdentifier  string
+	ProgramName         string
+	PassDescription     string
+	StampGoal           int
+	BackgroundColor     string
+	ForegroundColor     string
+	LabelColor          string
+	AssetBundleRef      string
+	SupportText         string
+	TermsText           string
+	CampaignDisplayMode string
+}
+
 type ActivateAppleSigningCertificateInput struct {
 	CertificateID          string
 	MerchantID             string
@@ -86,6 +122,7 @@ type AppleWalletConfiguration struct {
 	Issuer       AppleWalletIssuer         `json:"issuer"`
 	PassTypes    []ApplePassType           `json:"pass_types"`
 	Certificates []AppleSigningCertificate `json:"certificates"`
+	Designs      []ApplePassDesign         `json:"designs"`
 }
 
 type ActiveAppleWalletCredential struct {
@@ -113,4 +150,8 @@ func NewApplePassTypeID() (string, error) {
 
 func NewAppleCertificateID() (string, error) {
 	return newReadableID("CRT-")
+}
+
+func NewApplePassDesignID() (string, error) {
+	return newReadableID("DSN-")
 }

@@ -13,6 +13,7 @@ type Config struct {
 	AuthTokenSecret     string
 	AdminAPIToken       string
 	CertificateBasePath string
+	PassAssetBasePath   string
 	PassTypeID          string
 	TeamID              string
 	OrganizationName    string
@@ -34,6 +35,7 @@ func Load() Config {
 		AuthTokenSecret:     env("AUTH_TOKEN_SECRET", "dev-only-change-me"),
 		AdminAPIToken:       env("ADMIN_API_TOKEN", ""),
 		CertificateBasePath: env("APPLE_CERTIFICATE_BASE_PATH", "certs"),
+		PassAssetBasePath:   env("APPLE_PASS_ASSET_BASE_PATH", "pass-assets"),
 		PassTypeID:          env("APPLE_PASS_TYPE_ID", "pass.com.example.membership"),
 		TeamID:              env("APPLE_TEAM_ID", "ABCDE12345"),
 		OrganizationName:    env("APPLE_ORGANIZATION_NAME", "Example Company"),
