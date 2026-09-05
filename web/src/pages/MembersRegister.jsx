@@ -2,10 +2,10 @@ import React, { useState } from "react";
 import {
   ArrowRight,
   Check,
-  Sparkles,
   WalletCards,
 } from "lucide-react";
-import { API_BASE, API_VERSION_PREFIX, DEFAULT_MERCHANT } from "../config/api";
+import BrandLogo from "../components/BrandLogo.jsx";
+import { API_BASE, API_VERSION_PREFIX, DEFAULT_MERCHANT, SAAS_BRAND_NAME } from "../config/api";
 
 export default function MembersRegisterPage({ merchantSlug = "" }) {
   const [registration, setRegistration] = useState({
@@ -50,10 +50,9 @@ export default function MembersRegisterPage({ merchantSlug = "" }) {
   return (
     <div className="public-page member-register-page">
       <header className="public-header">
-        <div className="public-brand" aria-label={merchantLabel}>
-          <span className="auth-mark small">
-            <Sparkles size={20} />
-          </span>
+        <div className="public-brand" aria-label={`${merchantLabel} rewards powered by ${SAAS_BRAND_NAME}`}>
+          <BrandLogo className="public-brand-logo" />
+          <span className="public-brand-divider" aria-hidden="true" />
           <strong>{merchantLabel}</strong>
         </div>
       </header>

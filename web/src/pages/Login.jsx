@@ -4,9 +4,9 @@ import {
   Eye,
   LockKeyhole,
   Mail,
-  Sparkles,
 } from "lucide-react";
-import { API_BASE, API_VERSION_PREFIX, MERCHANT_SESSION_KEY, SAAS_BRAND_NAME } from "../config/api";
+import BrandLogo from "../components/BrandLogo.jsx";
+import { API_BASE, API_VERSION_PREFIX, MERCHANT_SESSION_KEY } from "../config/api";
 
 export default function LoginPage() {
   const [credentials, setCredentials] = useState({
@@ -55,11 +55,8 @@ export default function LoginPage() {
     <main className="auth-page">
       <section className="auth-shell" aria-label="Merchant login">
         <aside className="auth-visual-panel">
-          <div className="auth-star">
-            <Sparkles size={32} />
-          </div>
+          <BrandLogo variant="dark" className="auth-panel-logo" />
           <div className="auth-visual-copy">
-            <span>{SAAS_BRAND_NAME}</span>
             <h1>Run loyalty with clarity and momentum</h1>
             <p>Manage customers, issue wallet passes, and keep reward activity moving from one focused console.</p>
           </div>
@@ -67,9 +64,7 @@ export default function LoginPage() {
 
         <section className="auth-form-panel">
           <div className="auth-form-header">
-            <div className="auth-mark">
-              <Sparkles size={24} />
-            </div>
+            <BrandLogo variant="icon" className="auth-form-logo" />
             <h2>Merchant login</h2>
             <p>Access your loyalty dashboard and manage your customer rewards.</p>
           </div>

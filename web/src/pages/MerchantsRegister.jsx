@@ -2,8 +2,8 @@ import React, { useState } from "react";
 import {
   ArrowRight,
   Check,
-  Sparkles,
 } from "lucide-react";
+import BrandLogo from "../components/BrandLogo.jsx";
 import { API_BASE, API_VERSION_PREFIX, SAAS_BRAND_NAME } from "../config/api";
 
 export default function MerchantsRegisterPage() {
@@ -56,10 +56,7 @@ export default function MerchantsRegisterPage() {
     <div className="public-page merchant-register-page">
       <header className="public-header">
         <div className="public-brand" aria-label={SAAS_BRAND_NAME}>
-          <span className="auth-mark small">
-            <Sparkles size={20} />
-          </span>
-          <strong>{SAAS_BRAND_NAME}</strong>
+          <BrandLogo className="public-brand-logo" />
         </div>
       </header>
 

@@ -28,6 +28,12 @@ a {
   text-decoration: none;
 }
 
+.brand-logo {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
 .app-shell {
   min-height: 100vh;
   display: grid;
@@ -63,20 +69,15 @@ a {
   margin-bottom: 22px;
 }
 
-.sidebar-header strong {
-  font-size: 17px;
-  white-space: nowrap;
+.sidebar-brand-icon {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
 }
 
-.brand-mark {
-  flex: 0 0 auto;
-  width: 46px;
-  height: 46px;
-  border-radius: 8px;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  background: rgba(255, 255, 255, .16);
+.sidebar-header strong {
+  font-size: 18px;
+  white-space: nowrap;
 }
 
 .icon-nav {
@@ -1035,16 +1036,17 @@ textarea:focus {
   opacity: .48;
 }
 
-.auth-star,
+.auth-panel-logo,
 .auth-visual-copy {
   position: relative;
   z-index: 1;
 }
 
-.auth-star {
+.auth-panel-logo {
   position: absolute;
   top: 24px;
   left: 24px;
+  width: min(230px, calc(100% - 48px));
 }
 
 .auth-visual-copy {
@@ -1087,19 +1089,9 @@ textarea:focus {
   margin-bottom: 28px;
 }
 
-.auth-mark {
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  background: #5434f5;
-}
-
-.auth-mark.small {
-  width: 42px;
-  height: 42px;
+.auth-form-logo {
+  width: 52px;
+  height: 52px;
 }
 
 .auth-form-header h2 {
@@ -1232,6 +1224,24 @@ textarea:focus {
   align-items: center;
   gap: 12px;
   min-width: 0;
+}
+
+.public-brand-logo {
+  width: 190px;
+  flex: 0 0 auto;
+}
+
+.public-brand-icon {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+}
+
+.public-brand-divider {
+  width: 1px;
+  height: 28px;
+  flex: 0 0 auto;
+  background: #d8dde7;
 }
 
 .public-brand strong {
@@ -1845,7 +1855,7 @@ textarea:focus {
   }
 
   .auth-visual-panel {
-    min-height: 320px;
+    min-height: 390px;
     padding: 24px;
   }
 

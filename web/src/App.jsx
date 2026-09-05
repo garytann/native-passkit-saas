@@ -7,7 +7,6 @@ import {
   ChartNoAxesCombined,
   ChevronRight,
   CircleHelp,
-  Coffee,
   Download,
   Gauge,
   Home,
@@ -27,6 +26,7 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
+import BrandLogo from "./components/BrandLogo.jsx";
 import { API_BASE, API_VERSION_PREFIX, DEFAULT_MERCHANT, MERCHANT_SESSION_KEY } from "./config/api";
 
 const navItems = [
@@ -315,10 +315,8 @@ function Sidebar({ activeView, mobileOpen, onClose, onNavigate }) {
   return (
     <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`} aria-label="Main navigation">
       <div className="sidebar-header">
-        <div className="brand-mark">
-          <Coffee size={23} strokeWidth={2.2} />
-        </div>
-        <strong>Pass Console</strong>
+        <BrandLogo variant="icon" className="sidebar-brand-icon" alt="" />
+        <strong>Just Loyalty</strong>
       </div>
       <button
         className="icon-button sidebar-close"
