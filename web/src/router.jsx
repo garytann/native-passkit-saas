@@ -3,6 +3,8 @@ import App from "./App.jsx";
 import LoginPage from "./pages/Login.jsx";
 import MerchantsRegisterPage from "./pages/MerchantsRegister.jsx";
 import MembersRegisterPage from "./pages/MembersRegister.jsx";
+import AdminLoginPage from "./pages/AdminLogin.jsx";
+import AdminConsolePage from "./pages/AdminConsole.jsx";
 
 const CUSTOMER_REGISTRATION_PATH = "/members/register";
 const MERCHANT_REGISTRATION_PATH = "/merchants/register";
@@ -16,6 +18,14 @@ export default function AppRouter() {
 
   if (isPath(window.location.pathname, "/") || isPath(window.location.pathname, "/login")) {
     return <LoginPage />;
+  }
+
+  if (isPath(window.location.pathname, "/admin/login")) {
+    return <AdminLoginPage />;
+  }
+
+  if (isPath(window.location.pathname, "/admin")) {
+    return <AdminConsolePage />;
   }
 
   if (isPath(window.location.pathname, DASHBOARD_PATH)) {
