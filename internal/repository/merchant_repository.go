@@ -130,7 +130,9 @@ func (r MerchantRepository) GetByEmail(ctx context.Context, email string) (domai
 
 func (r MerchantRepository) GetBySlug(ctx context.Context, slug string) (domain.Merchant, error) {
 	var merchant merchantModel
-	if err := r.db.WithContext(ctx).First(&merchant, "merchant_slug = ?", slug).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Where("merchant_slug = ? AND password_hash <> ''", slug).
+		First(&merchant).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return domain.Merchant{}, domain.ErrMerchantNotFound
 		}
@@ -163,7 +165,10 @@ func (r MerchantRepository) GetByID(ctx context.Context, merchantID string) (dom
 
 func (r MerchantRepository) List(ctx context.Context) ([]domain.Merchant, error) {
 	var models []merchantModel
-	if err := r.db.WithContext(ctx).Order("creation_date DESC").Find(&models).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Where("password_hash <> ''").
+		Order("creation_date DESC").
+		Find(&models).Error; err != nil {
 		return nil, fmt.Errorf("list merchants: %w", err)
 	}
 	merchants := make([]domain.Merchant, 0, len(models))

@@ -45,9 +45,8 @@ func NewCustomerController(members service.MemberService, tokens service.TokenMa
 }
 
 type registerMemberRequest struct {
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Merchant string `json:"merchant"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
 }
 
 type publicRegisterMemberRequest struct {
@@ -105,6 +104,18 @@ func (c CustomerController) ListMembers(w http.ResponseWriter, r *http.Request) 
 }
 
 func (c CustomerController) RegisterMember(w http.ResponseWriter, r *http.Request) {
+	token, err := service.BearerToken(r.Header.Get("Authorization"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	claims, err := c.tokens.VerifyMerchantToken(token)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
 	var request registerMemberRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON request body")
@@ -114,7 +125,7 @@ func (c CustomerController) RegisterMember(w http.ResponseWriter, r *http.Reques
 	result, err := c.members.RegisterMember(r.Context(), service.RegisterMemberInput{
 		Name:     request.Name,
 		Email:    request.Email,
-		Merchant: request.Merchant,
+		Merchant: claims.Merchant,
 	})
 	if err != nil {
 		writeServiceError(w, err)

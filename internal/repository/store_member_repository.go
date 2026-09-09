@@ -4,16 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
-	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"native-ios-passkit-wip/internal/domain"
 )
-
-var slugSeparators = regexp.MustCompile(`[^a-z0-9]+`)
 
 type StoreMemberRepository struct {
 	db *gorm.DB
@@ -41,33 +38,9 @@ func AutoMigrateStoreMembers(db *gorm.DB) error {
 	if err := db.AutoMigrate(&storeMemberModel{}); err != nil {
 		return fmt.Errorf("auto migrate store members: %w", err)
 	}
-	if err := backfillMerchantsFromStoreMembers(db); err != nil {
-		return err
-	}
 	if err := ensureStoreMembersMerchantConstraint(db); err != nil {
 		return err
 	}
-	return nil
-}
-
-func backfillMerchantsFromStoreMembers(db *gorm.DB) error {
-	if err := db.Exec(`
-		INSERT INTO merchants (merchant_id, merchant, merchant_slug, merchant_email)
-		SELECT
-			'MCH-' || UPPER(SUBSTRING(MD5(merchant) FROM 1 FOR 8)),
-			merchant,
-			LOWER(REGEXP_REPLACE(TRIM(BOTH '-' FROM REGEXP_REPLACE(merchant, '[^a-zA-Z0-9]+', '-', 'g')), '-+', '-', 'g')),
-			'merchant-' || LOWER(SUBSTRING(MD5(merchant) FROM 1 FOR 10)) || '@example.com'
-		FROM (
-			SELECT DISTINCT merchant
-			FROM store_members
-			WHERE merchant IS NOT NULL AND merchant <> ''
-		) existing_merchants
-		ON CONFLICT (merchant) DO NOTHING
-	`).Error; err != nil {
-		return fmt.Errorf("backfill merchants from store members: %w", err)
-	}
-
 	return nil
 }
 
@@ -105,10 +78,6 @@ func ensureStoreMembersMerchantConstraint(db *gorm.DB) error {
 }
 
 func (r StoreMemberRepository) Create(ctx context.Context, input domain.CreateStoreMemberInput) (domain.StoreMember, error) {
-	if err := r.ensureMerchant(ctx, input.Merchant); err != nil {
-		return domain.StoreMember{}, err
-	}
-
 	member := storeMemberModel{
 		MemberID:      input.MemberID,
 		CustomerName:  input.CustomerName,
@@ -117,6 +86,9 @@ func (r StoreMemberRepository) Create(ctx context.Context, input domain.CreateSt
 	}
 
 	if err := r.db.WithContext(ctx).Create(&member).Error; err != nil {
+		if isForeignKeyViolation(err) {
+			return domain.StoreMember{}, domain.ErrMerchantNotFound
+		}
 		return domain.StoreMember{}, fmt.Errorf("create store member: %w", err)
 	}
 
@@ -131,46 +103,9 @@ func (r StoreMemberRepository) Create(ctx context.Context, input domain.CreateSt
 	}, nil
 }
 
-func (r StoreMemberRepository) ensureMerchant(ctx context.Context, merchantName string) error {
-	merchantName = strings.TrimSpace(merchantName)
-	if merchantName == "" {
-		return fmt.Errorf("merchant is required")
-	}
-
-	merchant := merchantModel{
-		MerchantID:    deterministicMerchantID(merchantName),
-		Merchant:      merchantName,
-		MerchantSlug:  merchantSlug(merchantName),
-		MerchantEmail: placeholderMerchantEmail(merchantName),
-	}
-
-	if err := r.db.WithContext(ctx).
-		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "merchant"}},
-			DoNothing: true,
-		}).
-		Create(&merchant).Error; err != nil {
-		return fmt.Errorf("ensure merchant exists: %w", err)
-	}
-
-	return nil
-}
-
-func deterministicMerchantID(merchantName string) string {
-	return "MCH-" + strings.ToUpper(domain.StableToken(merchantName, 8))
-}
-
-func placeholderMerchantEmail(merchantName string) string {
-	token := strings.ToLower(domain.StableToken(merchantName, 10))
-	return "merchant-" + token + "@example.com"
-}
-
-func merchantSlug(merchantName string) string {
-	slug := strings.Trim(slugSeparators.ReplaceAllString(strings.ToLower(strings.TrimSpace(merchantName)), "-"), "-")
-	if slug == "" {
-		return "merchant"
-	}
-	return slug
+func isForeignKeyViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23503"
 }
 
 func (r StoreMemberRepository) GetByID(ctx context.Context, memberID string) (domain.StoreMember, error) {

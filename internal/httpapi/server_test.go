@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,7 +9,36 @@ import (
 	"testing"
 
 	"native-ios-passkit-wip/internal/config"
+	"native-ios-passkit-wip/internal/domain"
+	"native-ios-passkit-wip/internal/service"
 )
+
+type capturingMemberRepository struct {
+	createdInput domain.CreateStoreMemberInput
+}
+
+func (r *capturingMemberRepository) Create(_ context.Context, input domain.CreateStoreMemberInput) (domain.StoreMember, error) {
+	r.createdInput = input
+	return domain.StoreMember{
+		MemberID:      input.MemberID,
+		CustomerName:  input.CustomerName,
+		CustomerEmail: input.CustomerEmail,
+		Merchant:      input.Merchant,
+		Status:        "active",
+	}, nil
+}
+
+func (*capturingMemberRepository) GetByID(context.Context, string) (domain.StoreMember, error) {
+	return domain.StoreMember{}, nil
+}
+
+func (*capturingMemberRepository) ListByMerchant(context.Context, string) ([]domain.StoreMember, error) {
+	return nil, nil
+}
+
+func (*capturingMemberRepository) UpdateStampProgressForMerchant(context.Context, string, string, int) (domain.StampUpdate, error) {
+	return domain.StampUpdate{}, nil
+}
 
 func TestRoutesUseAPIV1Prefix(t *testing.T) {
 	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080"}, nil, nil)
@@ -49,7 +79,7 @@ func TestPassExampleReturnsVersionedURLs(t *testing.T) {
 	}
 }
 
-func TestCustomerRegistrationRouteIsVersioned(t *testing.T) {
+func TestCustomerRegistrationRequiresMerchantToken(t *testing.T) {
 	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080"}, nil, nil)
 	routes := server.Routes()
 
@@ -61,8 +91,36 @@ func TestCustomerRegistrationRouteIsVersioned(t *testing.T) {
 	)
 	request.Header.Set("Content-Type", "application/json")
 	routes.ServeHTTP(response, request)
-	if response.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected versioned customer registration route to return 503 without db, got %d", response.Code)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected customer registration route to require auth token, got %d", response.Code)
+	}
+}
+
+func TestCustomerRegistrationUsesMerchantFromToken(t *testing.T) {
+	const secret = "customer-registration-test-secret"
+	repository := &capturingMemberRepository{}
+	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080", AuthTokenSecret: secret}, repository, nil)
+	routes := server.Routes()
+	token, err := service.NewTokenManager(secret).IssueMerchantToken("MCH-REAL1234", "Registered Coffee")
+	if err != nil {
+		t.Fatalf("issue merchant token: %v", err)
+	}
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/customers/members/register",
+		strings.NewReader(`{"name":"Taylor","email":"taylor@example.com","merchant":"Spoofed Merchant"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+token)
+	routes.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected customer registration to return 201, got %d: %s", response.Code, response.Body.String())
+	}
+	if repository.createdInput.Merchant != "Registered Coffee" {
+		t.Fatalf("expected token merchant to be stored, got %q", repository.createdInput.Merchant)
 	}
 }
 
