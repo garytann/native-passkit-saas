@@ -73,6 +73,8 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${APP_DATABASE_NAME:-passkit_wip}?sslmode=disable
       AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:?AUTH_TOKEN_SECRET is required}
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-}
+      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-}
+      PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-}
       APPLE_CERTIFICATE_BASE_PATH: ${APPLE_CERTIFICATE_BASE_PATH:-certs}
       APPLE_PASS_ASSET_BASE_PATH: ${APPLE_PASS_ASSET_BASE_PATH:-pass-assets}
       APPLE_PASS_TYPE_ID: ${APPLE_PASS_TYPE_ID:?APPLE_PASS_TYPE_ID is required}
@@ -85,8 +87,8 @@ services:
       APPLE_WWDR_CERT_PATH: ${APPLE_WWDR_CERT_PATH:-certs/wwdr.pem}
       OPENSSL_BIN: ${OPENSSL_BIN:-openssl}
     volumes:
-      - ./certs:/app/certs:ro
-      - ./pass-assets:/app/pass-assets:ro
+      - ./certs:/app/certs
+      - ./pass-assets:/app/pass-assets
 
   web:
     build:
