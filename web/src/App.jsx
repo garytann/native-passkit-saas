@@ -118,8 +118,11 @@ export default function App() {
     try {
       const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/customers/members/register`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(registration),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.token}`,
+        },
+        body: JSON.stringify({ name: registration.name, email: registration.email }),
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
