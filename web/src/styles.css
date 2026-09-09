@@ -882,33 +882,6 @@ a {
   color: #fff;
 }
 
-.team-stack {
-  display: flex;
-  align-items: center;
-  padding-left: 10px;
-}
-
-.team-stack span,
-.avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: #d8f0e3;
-  color: #245d52;
-  border: 2px solid #fbfcfe;
-  font-size: 12px;
-  font-weight: 800;
-  margin-left: -10px;
-}
-
-.avatar {
-  margin-left: 2px;
-  background: var(--brand-purple);
-  color: #fff;
-}
-
 .page-heading {
   margin: 48px 0 28px;
 }
@@ -2265,7 +2238,6 @@ textarea:focus {
     min-width: 0;
   }
 
-  .team-stack,
   .top-actions .pill-control,
   .top-actions .round-control {
     display: none;
@@ -2275,11 +2247,6 @@ textarea:focus {
     display: inline-flex;
     min-height: 40px;
     padding: 0 12px;
-  }
-
-  .avatar {
-    width: 40px;
-    height: 40px;
   }
 
   .page-heading {

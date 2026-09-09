@@ -272,7 +272,7 @@ export default function App() {
       {mobileNavOpen ? <button className="mobile-nav-backdrop" type="button" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} /> : null}
 
       <main className="workspace">
-        <Topbar activeView={activeView} onNavigate={setActiveView} session={session} onLogout={logout} onOpenMenu={() => setMobileNavOpen(true)} />
+        <Topbar activeView={activeView} onNavigate={setActiveView} onLogout={logout} onOpenMenu={() => setMobileNavOpen(true)} />
 
         {activeView === "customers" ? (
           <CustomersContent
@@ -350,7 +350,7 @@ function Sidebar({ activeView, mobileOpen, onClose, onNavigate }) {
   );
 }
 
-function Topbar({ activeView, onNavigate, session, onLogout, onOpenMenu }) {
+function Topbar({ activeView, onNavigate, onLogout, onOpenMenu }) {
   return (
     <header className="topbar">
       <button className="round-control mobile-menu-button" type="button" onClick={onOpenMenu} aria-label="Open navigation" title="Open navigation">
@@ -371,15 +371,6 @@ function Topbar({ activeView, onNavigate, session, onLogout, onOpenMenu }) {
         </button>
       </div>
       <div className="top-actions">
-        <div className="team-stack" aria-label="Workspace users">
-          <span>GC</span>
-          <span>DB</span>
-          <span>LT</span>
-        </div>
-        <button className="pill-control">
-          <Plus size={17} />
-          Add Manager
-        </button>
         <button className="round-control" aria-label="Notifications" title="Notifications">
           <Bell size={18} />
         </button>
@@ -389,17 +380,9 @@ function Topbar({ activeView, onNavigate, session, onLogout, onOpenMenu }) {
         <button className="pill-control logout-action" type="button" onClick={onLogout}>
           Logout
         </button>
-        <div className="avatar" aria-label="Admin profile">{merchantInitials(session?.merchant)}</div>
       </div>
     </header>
   );
-}
-
-function merchantInitials(merchant) {
-  const first = merchant?.first_name?.[0] ?? "";
-  const last = merchant?.last_name?.[0] ?? "";
-  const initials = `${first}${last}`.toUpperCase();
-  return initials || "SL";
 }
 
 function PageHeading({ current, title, actionLabel = "New Campaign" }) {
