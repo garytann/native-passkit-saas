@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -154,5 +155,55 @@ func TestAppleWalletAdminRouteRequiresAdminToken(t *testing.T) {
 	routes.ServeHTTP(response, request)
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("expected Apple Wallet admin route to require admin token, got %d", response.Code)
+	}
+}
+
+func TestPlatformAdminLoginIssuesAuthorizedToken(t *testing.T) {
+	server := NewServer(config.Config{
+		PublicBaseURL:         "http://localhost:8080",
+		AuthTokenSecret:       "test-signing-secret",
+		PlatformAdminEmail:    "admin@justloyalty.test",
+		PlatformAdminPassword: "correct-password",
+	}, nil, nil)
+	routes := server.Routes()
+
+	loginResponse := httptest.NewRecorder()
+	loginRequest := httptest.NewRequest(http.MethodPost, "/api/v1/admin/auth/login", strings.NewReader(`{"email":"admin@justloyalty.test","password":"correct-password"}`))
+	loginRequest.Header.Set("Content-Type", "application/json")
+	routes.ServeHTTP(loginResponse, loginRequest)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("expected admin login to return 200, got %d: %s", loginResponse.Code, loginResponse.Body.String())
+	}
+	var login struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(loginResponse.Body.Bytes(), &login); err != nil || login.Token == "" {
+		t.Fatalf("expected admin token in response: %v", err)
+	}
+
+	listResponse := httptest.NewRecorder()
+	listRequest := httptest.NewRequest(http.MethodGet, "/api/v1/admin/merchants", nil)
+	listRequest.Header.Set("Authorization", "Bearer "+login.Token)
+	routes.ServeHTTP(listResponse, listRequest)
+	if listResponse.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected authorized request to reach unavailable repository, got %d", listResponse.Code)
+	}
+}
+
+func TestPlatformAdminLoginRejectsInvalidPassword(t *testing.T) {
+	server := NewServer(config.Config{
+		PublicBaseURL:         "http://localhost:8080",
+		AuthTokenSecret:       "test-signing-secret",
+		PlatformAdminEmail:    "admin@justloyalty.test",
+		PlatformAdminPassword: "correct-password",
+	}, nil, nil)
+	routes := server.Routes()
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/admin/auth/login", strings.NewReader(`{"email":"admin@justloyalty.test","password":"wrong-password"}`))
+	request.Header.Set("Content-Type", "application/json")
+	routes.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected invalid admin login to return 401, got %d", response.Code)
 	}
 }

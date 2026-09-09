@@ -3,6 +3,8 @@ package controller
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -11,13 +13,17 @@ import (
 
 type AppleWalletAdminController struct {
 	wallet     service.AppleWalletService
+	onboarding service.AdminOnboardingService
+	tokens     service.TokenManager
 	adminToken string
 	pathPrefix string
 }
 
-func NewAppleWalletAdminController(wallet service.AppleWalletService, adminToken string, pathPrefix string) AppleWalletAdminController {
+func NewAppleWalletAdminController(wallet service.AppleWalletService, onboarding service.AdminOnboardingService, tokens service.TokenManager, adminToken string, pathPrefix string) AppleWalletAdminController {
 	return AppleWalletAdminController{
 		wallet:     wallet,
+		onboarding: onboarding,
+		tokens:     tokens,
 		adminToken: strings.TrimSpace(adminToken),
 		pathPrefix: pathPrefix,
 	}
@@ -53,6 +59,26 @@ type upsertApplePassDesignRequest struct {
 	CampaignDisplayMode string `json:"campaign_display_mode"`
 }
 
+type updatePaymentStatusRequest struct {
+	Status string `json:"status"`
+}
+
+type activateAppleWalletRequest struct {
+	PassTypeIdentifier string `json:"pass_type_identifier"`
+}
+
+func (c AppleWalletAdminController) ListMerchants(w http.ResponseWriter, r *http.Request) {
+	if !c.authorize(w, r) {
+		return
+	}
+	merchants, err := c.onboarding.ListMerchants(r.Context())
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"merchants": merchants})
+}
+
 func (c AppleWalletAdminController) Routes(w http.ResponseWriter, r *http.Request) {
 	if !c.authorize(w, r) {
 		return
@@ -64,21 +90,54 @@ func (c AppleWalletAdminController) Routes(w http.ResponseWriter, r *http.Reques
 	}
 
 	switch {
-	case action == "" && r.Method == http.MethodGet:
+	case action == "onboarding" && r.Method == http.MethodGet:
+		c.onboardingStatus(w, r, merchantID)
+	case action == "payment-status" && r.Method == http.MethodPut:
+		c.updatePaymentStatus(w, r, merchantID)
+	case action == "apple-wallet" && r.Method == http.MethodGet:
 		c.configuration(w, r, merchantID)
-	case action == "issuer" && r.Method == http.MethodPost:
+	case action == "apple-wallet/issuer" && r.Method == http.MethodPost:
 		c.configureIssuer(w, r, merchantID)
-	case action == "pass-types" && r.Method == http.MethodPost:
+	case action == "apple-wallet/pass-types" && r.Method == http.MethodPost:
 		c.createPassType(w, r, merchantID)
-	case action == "certificates" && r.Method == http.MethodPost:
+	case action == "apple-wallet/certificates" && r.Method == http.MethodPost:
 		c.provisionCertificate(w, r, merchantID)
-	case action == "pass-design" && r.Method == http.MethodGet:
+	case action == "apple-wallet/certificate-files" && r.Method == http.MethodPost:
+		c.uploadCertificateFiles(w, r, merchantID)
+	case action == "apple-wallet/pass-assets" && r.Method == http.MethodPut:
+		c.uploadPassAssets(w, r, merchantID)
+	case action == "apple-wallet/activate" && r.Method == http.MethodPost:
+		c.activate(w, r, merchantID)
+	case action == "apple-wallet/pass-design" && r.Method == http.MethodGet:
 		c.passDesign(w, r, merchantID)
-	case action == "pass-design" && r.Method == http.MethodPut:
+	case action == "apple-wallet/pass-design" && r.Method == http.MethodPut:
 		c.upsertPassDesign(w, r, merchantID)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func (c AppleWalletAdminController) onboardingStatus(w http.ResponseWriter, r *http.Request, merchantID string) {
+	status, err := c.onboarding.Status(r.Context(), merchantID)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
+func (c AppleWalletAdminController) updatePaymentStatus(w http.ResponseWriter, r *http.Request, merchantID string) {
+	var request updatePaymentStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request body")
+		return
+	}
+	status, err := c.onboarding.UpdatePaymentStatus(r.Context(), merchantID, request.Status)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (c AppleWalletAdminController) configuration(w http.ResponseWriter, r *http.Request, merchantID string) {
@@ -145,6 +204,92 @@ func (c AppleWalletAdminController) provisionCertificate(w http.ResponseWriter, 
 	writeJSON(w, http.StatusCreated, certificate)
 }
 
+func (c AppleWalletAdminController) uploadCertificateFiles(w http.ResponseWriter, r *http.Request, merchantID string) {
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "certificate upload must be multipart form data")
+		return
+	}
+	status, err := c.onboarding.Status(r.Context(), merchantID)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	certificate, err := multipartFile(r, "pass_certificate", 2<<20)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	privateKey, err := multipartFile(r, "private_key", 2<<20)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	alias, err := service.NewAppleStorageAlias(status.Merchant.MerchantSlug)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if err := c.wallet.StoreCertificateFiles(alias, certificate, privateKey); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	validated, err := c.wallet.ProvisionCertificate(r.Context(), service.ProvisionAppleCertificateRequest{
+		MerchantID:         merchantID,
+		PassTypeIdentifier: r.FormValue("pass_type_identifier"),
+		CredentialAlias:    alias,
+	})
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"credential_alias": alias, "certificate": validated})
+}
+
+func (c AppleWalletAdminController) uploadPassAssets(w http.ResponseWriter, r *http.Request, merchantID string) {
+	if err := r.ParseMultipartForm(24 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "asset upload must be multipart form data")
+		return
+	}
+	status, err := c.onboarding.Status(r.Context(), merchantID)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	assets := make(map[string][]byte, 6)
+	for _, name := range []string{"icon.png", "icon@2x.png", "icon@3x.png", "logo.png", "logo@2x.png", "logo@3x.png"} {
+		data, err := multipartFile(r, name, 4<<20)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		assets[name] = data
+	}
+	alias, err := service.NewAppleStorageAlias(status.Merchant.MerchantSlug)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if err := c.wallet.StorePassAssets(alias, assets); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"asset_bundle_ref": alias})
+}
+
+func (c AppleWalletAdminController) activate(w http.ResponseWriter, r *http.Request, merchantID string) {
+	var request activateAppleWalletRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request body")
+		return
+	}
+	status, err := c.onboarding.Activate(r.Context(), merchantID, request.PassTypeIdentifier)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
 func (c AppleWalletAdminController) passDesign(w http.ResponseWriter, r *http.Request, merchantID string) {
 	design, err := c.wallet.PassDesign(r.Context(), merchantID, r.URL.Query().Get("pass_type_identifier"))
 	if err != nil {
@@ -182,16 +327,19 @@ func (c AppleWalletAdminController) upsertPassDesign(w http.ResponseWriter, r *h
 }
 
 func (c AppleWalletAdminController) authorize(w http.ResponseWriter, r *http.Request) bool {
-	if c.adminToken == "" {
-		writeError(w, http.StatusServiceUnavailable, "admin API token is not configured")
-		return false
-	}
 	token, err := service.BearerToken(r.Header.Get("Authorization"))
-	if err != nil || subtle.ConstantTimeCompare([]byte(token), []byte(c.adminToken)) != 1 {
+	if err != nil {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return false
 	}
-	return true
+	if c.adminToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(c.adminToken)) == 1 {
+		return true
+	}
+	if _, err := c.tokens.VerifyAdminToken(token); err == nil {
+		return true
+	}
+	writeError(w, http.StatusUnauthorized, "unauthorized")
+	return false
 }
 
 func (c AppleWalletAdminController) route(path string) (string, string, bool) {
@@ -200,12 +348,27 @@ func (c AppleWalletAdminController) route(path string) (string, string, bool) {
 		return "", "", false
 	}
 	parts := strings.Split(strings.Trim(rest, "/"), "/")
-	if len(parts) < 2 || len(parts) > 3 || parts[0] == "" || parts[1] != "apple-wallet" {
+	if len(parts) < 2 || len(parts) > 3 || parts[0] == "" {
 		return "", "", false
 	}
-	action := ""
-	if len(parts) == 3 {
-		action = parts[2]
+	if parts[1] != "apple-wallet" && len(parts) != 2 {
+		return "", "", false
 	}
-	return parts[0], action, true
+	return parts[0], strings.Join(parts[1:], "/"), true
+}
+
+func multipartFile(r *http.Request, field string, limit int64) ([]byte, error) {
+	file, _, err := r.FormFile(field)
+	if err != nil {
+		return nil, fmt.Errorf("%s is required", field)
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", field, err)
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("%s exceeds the upload limit", field)
+	}
+	return data, nil
 }

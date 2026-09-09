@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
@@ -28,7 +29,8 @@ type AppleWalletRepository interface {
 	GetIssuerByMerchantID(ctx context.Context, merchantID string) (domain.AppleWalletIssuer, error)
 	UpdateIssuer(ctx context.Context, input domain.UpdateAppleWalletIssuerInput) (domain.AppleWalletIssuer, error)
 	CreatePassType(ctx context.Context, input domain.CreateApplePassTypeInput) (domain.ApplePassType, error)
-	ActivateCertificate(ctx context.Context, input domain.ActivateAppleSigningCertificateInput) (domain.AppleSigningCertificate, error)
+	SaveValidatedCertificate(ctx context.Context, input domain.ActivateAppleSigningCertificateInput) (domain.AppleSigningCertificate, error)
+	ActivateConfiguration(ctx context.Context, merchantID string, passTypeIdentifier string) error
 	ConfigurationByMerchantID(ctx context.Context, merchantID string) (domain.AppleWalletConfiguration, error)
 	ResolveActiveByMerchant(ctx context.Context, merchant string) (domain.ActiveAppleWalletCredential, error)
 	ResolveActiveByPassType(ctx context.Context, passTypeIdentifier string) (domain.ActiveAppleWalletCredential, error)
@@ -225,7 +227,7 @@ func (s AppleWalletService) ProvisionCertificate(ctx context.Context, input Prov
 	if err != nil {
 		return domain.AppleSigningCertificate{}, err
 	}
-	return s.repo.ActivateCertificate(ctx, domain.ActivateAppleSigningCertificateInput{
+	return s.repo.SaveValidatedCertificate(ctx, domain.ActivateAppleSigningCertificateInput{
 		CertificateID:          certificateID,
 		MerchantID:             input.MerchantID,
 		PassTypeIdentifier:     input.PassTypeIdentifier,
@@ -236,6 +238,56 @@ func (s AppleWalletService) ProvisionCertificate(ctx context.Context, input Prov
 		ValidFrom:              metadata.ValidFrom,
 		ExpiresAt:              metadata.ExpiresAt,
 	})
+}
+
+func (s AppleWalletService) Activate(ctx context.Context, merchantID string, passTypeIdentifier string) (domain.AppleWalletConfiguration, error) {
+	if s.repo == nil {
+		return domain.AppleWalletConfiguration{}, ErrRepositoryUnavailable
+	}
+	merchantID = strings.TrimSpace(merchantID)
+	passTypeIdentifier = strings.TrimSpace(passTypeIdentifier)
+	if merchantID == "" {
+		return domain.AppleWalletConfiguration{}, ValidationError{Message: "merchant id is required"}
+	}
+	if !passTypeIdentifierPattern.MatchString(passTypeIdentifier) {
+		return domain.AppleWalletConfiguration{}, ValidationError{Message: "pass_type_identifier is invalid"}
+	}
+
+	configuration, err := s.repo.ConfigurationByMerchantID(ctx, merchantID)
+	if err != nil {
+		return domain.AppleWalletConfiguration{}, err
+	}
+	design, ok := designForPassType(configuration, passTypeIdentifier)
+	if !ok {
+		return domain.AppleWalletConfiguration{}, ValidationError{Message: "pass design is required before activation"}
+	}
+	if design.AssetBundleRef == "" {
+		return domain.AppleWalletConfiguration{}, ValidationError{Message: "pass assets are required before activation"}
+	}
+	if err := validatePassAssetBundle(filepath.Join(s.assetBasePath, design.AssetBundleRef)); err != nil {
+		return domain.AppleWalletConfiguration{}, ValidationError{Message: err.Error()}
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	if err := s.repo.ActivateConfiguration(ctx, merchantID, passTypeIdentifier); err != nil {
+		return domain.AppleWalletConfiguration{}, err
+	}
+	return s.repo.ConfigurationByMerchantID(ctx, merchantID)
+}
+
+func designForPassType(configuration domain.AppleWalletConfiguration, passTypeIdentifier string) (domain.ApplePassDesign, bool) {
+	for _, passType := range configuration.PassTypes {
+		if passType.PassTypeIdentifier != passTypeIdentifier {
+			continue
+		}
+		for _, design := range configuration.Designs {
+			if design.ApplePassTypeID == passType.ApplePassTypeID {
+				return design, true
+			}
+		}
+	}
+	return domain.ApplePassDesign{}, false
 }
 
 func (s AppleWalletService) PassDesign(ctx context.Context, merchantID string, passTypeIdentifier string) (domain.ApplePassDesign, error) {
@@ -421,6 +473,101 @@ func (s AppleWalletService) ResolveActiveByPassType(ctx context.Context, passTyp
 		return domain.ActiveAppleWalletCredential{}, ErrRepositoryUnavailable
 	}
 	return s.repo.ResolveActiveByPassType(ctx, strings.TrimSpace(passTypeIdentifier))
+}
+
+func (s AppleWalletService) StoreCertificateFiles(alias string, certificate []byte, privateKey []byte) error {
+	alias = strings.TrimSpace(strings.ToLower(alias))
+	if !credentialAliasPattern.MatchString(alias) {
+		return ValidationError{Message: "certificate alias is invalid"}
+	}
+	if s.certificateBasePath == "" {
+		return errors.New("apple certificate base path is not configured")
+	}
+	if len(certificate) == 0 || len(privateKey) == 0 {
+		return ValidationError{Message: "pass certificate and private key are required"}
+	}
+	directory := filepath.Join(s.certificateBasePath, alias)
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		return fmt.Errorf("create certificate directory: %w", err)
+	}
+	if err := writeAtomicFile(filepath.Join(directory, "pass-cert.pem"), certificate, 0644); err != nil {
+		return fmt.Errorf("store pass certificate: %w", err)
+	}
+	if err := writeAtomicFile(filepath.Join(directory, "pass-key.pem"), privateKey, 0600); err != nil {
+		return fmt.Errorf("store pass private key: %w", err)
+	}
+	return nil
+}
+
+func NewAppleStorageAlias(merchantSlug string) (string, error) {
+	base := strings.Trim(strings.ToLower(merchantSlug), "-")
+	if len(base) > 52 {
+		base = strings.TrimRight(base[:52], "-")
+	}
+	if !credentialAliasPattern.MatchString(base) {
+		return "", ValidationError{Message: "merchant slug cannot be used for Apple Wallet storage"}
+	}
+	random := make([]byte, 4)
+	if _, err := rand.Read(random); err != nil {
+		return "", fmt.Errorf("generate Apple Wallet storage alias: %w", err)
+	}
+	return base + "-" + hex.EncodeToString(random), nil
+}
+
+func (s AppleWalletService) StorePassAssets(alias string, assets map[string][]byte) error {
+	alias = strings.TrimSpace(strings.ToLower(alias))
+	if !credentialAliasPattern.MatchString(alias) {
+		return ValidationError{Message: "asset bundle alias is invalid"}
+	}
+	if s.assetBasePath == "" {
+		return errors.New("apple pass asset base path is not configured")
+	}
+	directory := filepath.Join(s.assetBasePath, alias)
+	if err := os.MkdirAll(directory, 0755); err != nil {
+		return fmt.Errorf("create pass asset directory: %w", err)
+	}
+	for _, name := range requiredPassAssets {
+		data := assets[name]
+		if len(data) == 0 {
+			return ValidationError{Message: fmt.Sprintf("pass asset %s is required", name)}
+		}
+		if err := writeAtomicFile(filepath.Join(directory, name), data, 0644); err != nil {
+			return fmt.Errorf("store pass asset %s: %w", name, err)
+		}
+	}
+	if err := validatePassAssetBundle(directory); err != nil {
+		return ValidationError{Message: err.Error()}
+	}
+	return nil
+}
+
+func (s AppleWalletService) ValidateAssetBundle(alias string) error {
+	alias = strings.TrimSpace(strings.ToLower(alias))
+	if !credentialAliasPattern.MatchString(alias) || s.assetBasePath == "" {
+		return ValidationError{Message: "pass asset bundle is not configured"}
+	}
+	return validatePassAssetBundle(filepath.Join(s.assetBasePath, alias))
+}
+
+func writeAtomicFile(path string, data []byte, mode os.FileMode) error {
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".upload-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(mode); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(data); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryPath, path)
 }
 
 type appleCertificateMetadata struct {

@@ -16,6 +16,9 @@ type MerchantRepository interface {
 	CreateWithPendingWalletIssuer(ctx context.Context, merchant domain.CreateMerchantInput, issuer domain.CreateAppleWalletIssuerInput) (domain.Merchant, error)
 	GetByEmail(ctx context.Context, email string) (domain.MerchantCredentials, error)
 	GetBySlug(ctx context.Context, slug string) (domain.Merchant, error)
+	GetByID(ctx context.Context, merchantID string) (domain.Merchant, error)
+	List(ctx context.Context) ([]domain.Merchant, error)
+	UpdatePaymentStatus(ctx context.Context, merchantID string, status string) (domain.Merchant, error)
 }
 
 type RegisterMerchantInput struct {
@@ -130,6 +133,45 @@ func (s MerchantService) MerchantBySlug(ctx context.Context, slug string) (domai
 	}
 
 	return merchant, nil
+}
+
+func (s MerchantService) MerchantByID(ctx context.Context, merchantID string) (domain.Merchant, error) {
+	if s.repo == nil {
+		return domain.Merchant{}, ErrRepositoryUnavailable
+	}
+	merchantID = strings.TrimSpace(merchantID)
+	if merchantID == "" {
+		return domain.Merchant{}, ValidationError{Message: "merchant id is required"}
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	return s.repo.GetByID(ctx, merchantID)
+}
+
+func (s MerchantService) ListMerchants(ctx context.Context) ([]domain.Merchant, error) {
+	if s.repo == nil {
+		return nil, ErrRepositoryUnavailable
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	return s.repo.List(ctx)
+}
+
+func (s MerchantService) UpdatePaymentStatus(ctx context.Context, merchantID string, status string) (domain.Merchant, error) {
+	if s.repo == nil {
+		return domain.Merchant{}, ErrRepositoryUnavailable
+	}
+	merchantID = strings.TrimSpace(merchantID)
+	status = strings.TrimSpace(strings.ToLower(status))
+	if merchantID == "" {
+		return domain.Merchant{}, ValidationError{Message: "merchant id is required"}
+	}
+	if status != "active" && status != "inactive" {
+		return domain.Merchant{}, ValidationError{Message: "payment status must be active or inactive"}
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	return s.repo.UpdatePaymentStatus(ctx, merchantID, status)
 }
 
 func (s MerchantService) LoginMerchant(ctx context.Context, input LoginMerchantInput) (LoginMerchantResult, error) {

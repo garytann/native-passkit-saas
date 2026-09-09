@@ -168,7 +168,7 @@ func (r AppleWalletRepository) CreatePassType(ctx context.Context, input domain.
 	return applePassTypeFromModel(model), nil
 }
 
-func (r AppleWalletRepository) ActivateCertificate(ctx context.Context, input domain.ActivateAppleSigningCertificateInput) (domain.AppleSigningCertificate, error) {
+func (r AppleWalletRepository) SaveValidatedCertificate(ctx context.Context, input domain.ActivateAppleSigningCertificateInput) (domain.AppleSigningCertificate, error) {
 	var activated appleSigningCertificateModel
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var passType applePassTypeModel
@@ -183,13 +183,6 @@ func (r AppleWalletRepository) ActivateCertificate(ctx context.Context, input do
 			return fmt.Errorf("find apple pass type: %w", err)
 		}
 
-		if err := tx.Model(&appleSigningCertificateModel{}).
-			Where("apple_pass_type_id = ? AND status = ?", passType.ApplePassTypeID, "active").
-			Updates(map[string]any{"status": "retiring"}).Error; err != nil {
-			return fmt.Errorf("retire active apple certificate: %w", err)
-		}
-
-		now := time.Now().UTC()
 		activated = appleSigningCertificateModel{
 			CertificateID:          input.CertificateID,
 			ApplePassTypeID:        passType.ApplePassTypeID,
@@ -199,8 +192,8 @@ func (r AppleWalletRepository) ActivateCertificate(ctx context.Context, input do
 			CertificateSerial:      input.CertificateSerial,
 			ValidFrom:              input.ValidFrom,
 			ExpiresAt:              input.ExpiresAt,
-			Status:                 "active",
-			ActivatedAt:            &now,
+			Status:                 "validated",
+			ActivatedAt:            nil,
 		}
 		if err := tx.Create(&activated).Error; err != nil {
 			if isUniqueViolation(err) {
@@ -208,23 +201,62 @@ func (r AppleWalletRepository) ActivateCertificate(ctx context.Context, input do
 			}
 			return fmt.Errorf("create apple signing certificate: %w", err)
 		}
-
-		if err := tx.Model(&applePassTypeModel{}).
-			Where("apple_pass_type_id = ?", passType.ApplePassTypeID).
-			Updates(map[string]any{"status": "active", "updated_at": now}).Error; err != nil {
-			return fmt.Errorf("activate apple pass type: %w", err)
-		}
-		if err := tx.Model(&appleWalletIssuerModel{}).
-			Where("issuer_id = ?", passType.IssuerID).
-			Updates(map[string]any{"status": "active", "updated_at": now}).Error; err != nil {
-			return fmt.Errorf("activate apple wallet issuer: %w", err)
-		}
 		return nil
 	})
 	if err != nil {
 		return domain.AppleSigningCertificate{}, err
 	}
 	return appleSigningCertificateFromModel(activated), nil
+}
+
+func (r AppleWalletRepository) ActivateConfiguration(ctx context.Context, merchantID string, passTypeIdentifier string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		passType, err := findPassTypeForMerchant(tx, merchantID, passTypeIdentifier)
+		if err != nil {
+			return err
+		}
+
+		var certificate appleSigningCertificateModel
+		if err := tx.Where("apple_pass_type_id = ? AND status IN ? AND expires_at > ?", passType.ApplePassTypeID, []string{"validated", "active"}, time.Now().UTC()).
+			Order("created_at DESC").Take(&certificate).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return domain.ErrAppleWalletCertificateNotFound
+			}
+			return fmt.Errorf("find validated apple certificate: %w", err)
+		}
+
+		var design applePassDesignModel
+		if err := tx.Where("apple_pass_type_id = ?", passType.ApplePassTypeID).Take(&design).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return domain.ErrApplePassDesignNotFound
+			}
+			return fmt.Errorf("find apple pass design: %w", err)
+		}
+
+		now := time.Now().UTC()
+		if err := tx.Model(&appleSigningCertificateModel{}).
+			Where("apple_pass_type_id = ? AND certificate_id <> ? AND status = ?", passType.ApplePassTypeID, certificate.CertificateID, "active").
+			Update("status", "retiring").Error; err != nil {
+			return fmt.Errorf("retire active apple certificate: %w", err)
+		}
+		if err := tx.Model(&appleSigningCertificateModel{}).Where("certificate_id = ?", certificate.CertificateID).
+			Updates(map[string]any{"status": "active", "activated_at": now}).Error; err != nil {
+			return fmt.Errorf("activate apple certificate: %w", err)
+		}
+		if err := tx.Model(&applePassTypeModel{}).Where("apple_pass_type_id = ?", passType.ApplePassTypeID).
+			Updates(map[string]any{"status": "active", "updated_at": now}).Error; err != nil {
+			return fmt.Errorf("activate apple pass type: %w", err)
+		}
+		if err := tx.Model(&appleWalletIssuerModel{}).Where("issuer_id = ?", passType.IssuerID).
+			Updates(map[string]any{"status": "active", "updated_at": now}).Error; err != nil {
+			return fmt.Errorf("activate apple wallet issuer: %w", err)
+		}
+		if err := tx.Model(&applePassDesignModel{}).Where("design_id = ?", design.DesignID).
+			Updates(map[string]any{"status": "active", "updated_at": now}).Error; err != nil {
+			return fmt.Errorf("activate apple pass design: %w", err)
+		}
+		return nil
+	})
 }
 
 func (r AppleWalletRepository) UpsertPassDesign(ctx context.Context, input domain.UpsertApplePassDesignInput) (domain.ApplePassDesign, error) {
@@ -235,6 +267,10 @@ func (r AppleWalletRepository) UpsertPassDesign(ctx context.Context, input domai
 			return err
 		}
 		now := time.Now().UTC()
+		designStatus := "draft"
+		if passType.Status == "active" {
+			designStatus = "active"
+		}
 		saved = applePassDesignModel{
 			DesignID:            input.DesignID,
 			ApplePassTypeID:     passType.ApplePassTypeID,
@@ -248,7 +284,7 @@ func (r AppleWalletRepository) UpsertPassDesign(ctx context.Context, input domai
 			SupportText:         input.SupportText,
 			TermsText:           input.TermsText,
 			CampaignDisplayMode: input.CampaignDisplayMode,
-			Status:              "active",
+			Status:              designStatus,
 			Version:             1,
 			UpdatedAt:           now,
 		}
@@ -263,7 +299,7 @@ func (r AppleWalletRepository) UpsertPassDesign(ctx context.Context, input domai
 			"support_text":          input.SupportText,
 			"terms_text":            input.TermsText,
 			"campaign_display_mode": input.CampaignDisplayMode,
-			"status":                "active",
+			"status":                designStatus,
 			"version":               gorm.Expr("apple_pass_designs.version + 1"),
 			"updated_at":            now,
 		}
@@ -440,7 +476,7 @@ func activeAppleWalletCredentialQuery(db *gorm.DB) *gorm.DB {
 		Joins("INNER JOIN apple_pass_types AS apt ON apt.apple_pass_type_id = cert.apple_pass_type_id").
 		Joins("INNER JOIN apple_wallet_issuers AS awi ON awi.issuer_id = apt.issuer_id").
 		Joins("INNER JOIN merchants AS m ON m.merchant_id = awi.merchant_id").
-		Where("cert.status = ? AND apt.status = ? AND awi.status = ?", "active", "active", "active")
+		Where("cert.status = ? AND apt.status = ? AND awi.status = ? AND m.status = ? AND m.payment_status = ? AND cert.expires_at > ?", "active", "active", "active", "active", "active", time.Now().UTC())
 }
 
 func appleWalletIssuerFromModel(model appleWalletIssuerModel) domain.AppleWalletIssuer {

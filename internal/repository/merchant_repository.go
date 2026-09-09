@@ -150,6 +150,56 @@ func (r MerchantRepository) GetBySlug(ctx context.Context, slug string) (domain.
 	}, nil
 }
 
+func (r MerchantRepository) GetByID(ctx context.Context, merchantID string) (domain.Merchant, error) {
+	var merchant merchantModel
+	if err := r.db.WithContext(ctx).First(&merchant, "merchant_id = ?", merchantID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.Merchant{}, domain.ErrMerchantNotFound
+		}
+		return domain.Merchant{}, fmt.Errorf("get merchant by id: %w", err)
+	}
+	return merchantFromModel(merchant), nil
+}
+
+func (r MerchantRepository) List(ctx context.Context) ([]domain.Merchant, error) {
+	var models []merchantModel
+	if err := r.db.WithContext(ctx).Order("creation_date DESC").Find(&models).Error; err != nil {
+		return nil, fmt.Errorf("list merchants: %w", err)
+	}
+	merchants := make([]domain.Merchant, 0, len(models))
+	for _, model := range models {
+		merchants = append(merchants, merchantFromModel(model))
+	}
+	return merchants, nil
+}
+
+func (r MerchantRepository) UpdatePaymentStatus(ctx context.Context, merchantID string, status string) (domain.Merchant, error) {
+	result := r.db.WithContext(ctx).Model(&merchantModel{}).
+		Where("merchant_id = ?", merchantID).
+		Update("payment_status", status)
+	if result.Error != nil {
+		return domain.Merchant{}, fmt.Errorf("update merchant payment status: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return domain.Merchant{}, domain.ErrMerchantNotFound
+	}
+	return r.GetByID(ctx, merchantID)
+}
+
+func merchantFromModel(merchant merchantModel) domain.Merchant {
+	return domain.Merchant{
+		MerchantID:    merchant.MerchantID,
+		CreationDate:  merchant.CreationDate,
+		FirstName:     merchant.FirstName,
+		LastName:      merchant.LastName,
+		Merchant:      merchant.Merchant,
+		MerchantSlug:  merchant.MerchantSlug,
+		MerchantEmail: merchant.MerchantEmail,
+		Status:        merchant.Status,
+		PaymentStatus: merchant.PaymentStatus,
+	}
+}
+
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"

@@ -17,6 +17,12 @@ type MerchantTokenClaims struct {
 	ExpiresAt  int64  `json:"exp"`
 }
 
+type AdminTokenClaims struct {
+	Email     string `json:"email"`
+	Role      string `json:"role"`
+	ExpiresAt int64  `json:"exp"`
+}
+
 type TokenManager struct {
 	secret []byte
 	ttl    time.Duration
@@ -43,6 +49,46 @@ func (m TokenManager) IssueMerchantToken(merchantID string, merchant string) (st
 	encodedPayload := base64.RawURLEncoding.EncodeToString(payload)
 	signature := m.sign(encodedPayload)
 	return encodedPayload + "." + signature, nil
+}
+
+func (m TokenManager) IssueAdminToken(email string) (string, error) {
+	claims := AdminTokenClaims{
+		Email:     strings.TrimSpace(strings.ToLower(email)),
+		Role:      "platform_admin",
+		ExpiresAt: time.Now().Add(8 * time.Hour).Unix(),
+	}
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		return "", fmt.Errorf("marshal admin token claims: %w", err)
+	}
+
+	encodedPayload := base64.RawURLEncoding.EncodeToString(payload)
+	signedPayload := "admin." + encodedPayload
+	return signedPayload + "." + m.sign(signedPayload), nil
+}
+
+func (m TokenManager) VerifyAdminToken(token string) (AdminTokenClaims, error) {
+	parts := strings.Split(strings.TrimSpace(token), ".")
+	if len(parts) != 3 || parts[0] != "admin" || parts[1] == "" || parts[2] == "" {
+		return AdminTokenClaims{}, ErrUnauthorized
+	}
+	signedPayload := parts[0] + "." + parts[1]
+	if !hmac.Equal([]byte(parts[2]), []byte(m.sign(signedPayload))) {
+		return AdminTokenClaims{}, ErrUnauthorized
+	}
+
+	data, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return AdminTokenClaims{}, ErrUnauthorized
+	}
+	var claims AdminTokenClaims
+	if err := json.Unmarshal(data, &claims); err != nil {
+		return AdminTokenClaims{}, ErrUnauthorized
+	}
+	if claims.Email == "" || claims.Role != "platform_admin" || time.Now().Unix() > claims.ExpiresAt {
+		return AdminTokenClaims{}, ErrUnauthorized
+	}
+	return claims, nil
 }
 
 func (m TokenManager) VerifyMerchantToken(token string) (MerchantTokenClaims, error) {

@@ -76,6 +76,7 @@ func (s Server) Routes() http.Handler {
 	apnsSender := service.NewAPNSPassUpdateSender(s.cfg, appleWalletService)
 	memberService := service.NewMemberServiceWithWalletUpdates(s.memberRepo, s.merchantRepo, linker, passService, s.walletRegistrationRepo, apnsSender)
 	merchantService := service.NewMerchantService(s.merchantRepo, tokenManager, s.cfg.TeamID)
+	adminOnboardingService := service.NewAdminOnboardingService(merchantService, appleWalletService)
 	walletService := service.NewWalletService(s.walletRegistrationRepo)
 	campaignService := service.NewCampaignServiceWithPush(s.campaignRepo, s.memberRepo, passService, s.walletRegistrationRepo, apnsSender)
 
@@ -84,7 +85,8 @@ func (s Server) Routes() http.Handler {
 	merchantController := controller.NewMerchantController(merchantService)
 	passController := controller.NewPassController(passService, walletService, v1.Path("/apple/passes/"))
 	campaignController := controller.NewCampaignController(campaignService, tokenManager)
-	appleWalletAdminController := controller.NewAppleWalletAdminController(appleWalletService, s.cfg.AdminAPIToken, v1.Path("/admin/merchants/"))
+	adminAuthController := controller.NewAdminAuthController(s.cfg.PlatformAdminEmail, s.cfg.PlatformAdminPassword, tokenManager)
+	appleWalletAdminController := controller.NewAppleWalletAdminController(appleWalletService, adminOnboardingService, tokenManager, s.cfg.AdminAPIToken, v1.Path("/admin/merchants/"))
 
 	v1.HandleFunc("/healthz", method(http.MethodGet, healthController.Check))
 	v1.HandleFunc("/customers/members", method(http.MethodGet, customerController.ListMembers))
@@ -94,6 +96,8 @@ func (s Server) Routes() http.Handler {
 	v1.HandleFunc("/public/merchants/", method(http.MethodPost, customerController.RegisterPublicMember))
 	v1.HandleFunc("/merchants/register", method(http.MethodPost, merchantController.RegisterMerchant))
 	v1.HandleFunc("/merchants/login", method(http.MethodPost, merchantController.LoginMerchant))
+	v1.HandleFunc("/admin/auth/login", method(http.MethodPost, adminAuthController.Login))
+	v1.HandleFunc("/admin/merchants", method(http.MethodGet, appleWalletAdminController.ListMerchants))
 	v1.HandleFunc("/admin/merchants/", appleWalletAdminController.Routes)
 	v1.HandleFunc("/apple/passes/example", method(http.MethodGet, passController.Example))
 	v1.HandleFunc("/apple/passes/", passController.Routes)
