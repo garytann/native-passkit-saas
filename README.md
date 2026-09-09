@@ -225,7 +225,9 @@ docker compose --profile db-admin run --rm db-migrate
 docker compose up -d --build
 ```
 
-The backend container mounts `./certs` read-only at `/app/certs`, so your Apple Wallet certificate paths can stay as:
+The backend container mounts `./certs` at `/app/certs`. It must be writable for
+admin-console credential uploads and should be backed up as sensitive
+persistent data. Apple Wallet certificate paths can stay as:
 
 ```text
 certs/pass-cert.pem
@@ -531,9 +533,9 @@ openssl x509 -inform DER -in AppleWWDRCAG*.cer -out certs/wwdr.pem
 ## Per-Merchant Apple Wallet Provisioning
 
 New merchant registration creates an `apple_wallet_issuers` record with a
-`pending` status. Existing merchants receive the record when an administrator
-first configures their issuer. Pass issuance for a pending issuer is disabled
-until a matching Pass Type certificate is validated and activated.
+`pending` status. Pass issuance remains disabled until payment, Apple identity,
+certificate, assets, and design are complete and an administrator performs the
+final activation.
 
 Set an administrator token and mount merchant credentials and pass assets
 beneath their separate shared directories:
@@ -592,8 +594,9 @@ curl -X POST https://loyalty.example.com/api/v1/admin/merchants/MCH-EXAMPLE/appl
 ```
 
 The last request validates the certificate/private-key match, Pass Type ID,
-Apple Team ID, validity period, and WWDR signature before activating the
-issuer. Then create the merchant-specific pass design:
+Apple Team ID, validity period, and WWDR signature. The certificate remains in
+`validated` status while onboarding is incomplete. Then create the
+merchant-specific pass design:
 
 ```bash
 curl -X PUT https://loyalty.example.com/api/v1/admin/merchants/MCH-EXAMPLE/apple-wallet/pass-design \
@@ -622,6 +625,33 @@ Inspect the resulting configuration with:
 curl https://loyalty.example.com/api/v1/admin/merchants/MCH-EXAMPLE/apple-wallet \
   -H 'Authorization: Bearer your-admin-token'
 ```
+
+The protected business console is available at `/admin`. Configure its login
+without exposing the credentials in the frontend bundle:
+
+```env
+PLATFORM_ADMIN_EMAIL=admin@justloyalty.example
+PLATFORM_ADMIN_PASSWORD=replace-with-a-long-unique-password
+```
+
+The console calls the administrator APIs with an eight-hour, signed
+`platform_admin` token. `ADMIN_API_TOKEN` remains supported for scripts.
+Certificate and asset uploads use immutable server-generated aliases beneath
+`APPLE_CERTIFICATE_BASE_PATH` and `APPLE_PASS_ASSET_BASE_PATH`; both mounts must
+be writable and persistent.
+
+The final wizard action calls:
+
+```bash
+curl -X POST https://loyalty.example.com/api/v1/admin/merchants/MCH-EXAMPLE/apple-wallet/activate \
+  -H 'Authorization: Bearer your-admin-token' \
+  -H 'Content-Type: application/json' \
+  -d '{"pass_type_identifier":"pass.com.justloyalty.luckincoffee"}'
+```
+
+Activation is rejected unless the merchant payment is active and all Wallet
+configuration checks pass. Runtime pass credential resolution also enforces
+active merchant and payment status.
 
 ## Next Steps
 
