@@ -369,6 +369,7 @@ The same web service also supports unregistering, listing changed serial numbers
 
 ```http
 POST /api/v1/customers/members/register
+Authorization: Bearer <merchant-token>
 Content-Type: application/json
 ```
 
@@ -377,10 +378,25 @@ Request:
 ```json
 {
   "name": "Taylor Example",
-  "email": "taylor@example.com",
-  "merchant": "Daily Brew"
+  "email": "taylor@example.com"
 }
 ```
+
+This endpoint is for the authenticated merchant dashboard. The backend derives the merchant from the signed bearer token and does not trust a merchant name supplied by the client.
+
+Customers using a merchant's dedicated signup link call the public endpoint instead:
+
+```http
+POST /api/v1/public/merchants/{merchant_slug}/members/register
+Content-Type: application/json
+
+{
+  "name": "Taylor Example",
+  "email": "taylor@example.com"
+}
+```
+
+The merchant slug must resolve to an existing registered merchant. Member registration never creates a merchant account.
 
 Response:
 
