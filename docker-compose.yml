@@ -99,11 +99,17 @@ services:
     depends_on:
       - backend
 
+  landing:
+    build:
+      context: ./landing
+      dockerfile: Dockerfile
+
   proxy:
     image: nginx:1.27-alpine
     depends_on:
       - backend
       - web
+      - landing
     ports:
       - "${PROXY_HOST_PORT:-80}:80"
       - "${PROXY_HTTPS_HOST_PORT:-443}:443"
