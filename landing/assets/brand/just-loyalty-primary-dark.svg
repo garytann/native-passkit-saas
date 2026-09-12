@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="164" viewBox="0 0 620 164" role="img" aria-labelledby="title desc">
+  <title id="title">Just Loyalty primary logo for dark backgrounds</title>
+  <desc id="desc">Primary Just Loyalty logo with digital wallet pass icon and light wordmark.</desc>
+  <defs>
+    <linearGradient id="passGradient" x1="20" y1="20" x2="136" y2="136" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#18BFA3"/>
+      <stop offset="0.54" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#7DD3FC"/>
+    </linearGradient>
+  </defs>
+  <g>
+    <rect x="25" y="17" width="108" height="120" rx="24" fill="#D9F7F1"/>
+    <rect x="12" y="31" width="136" height="104" rx="27" fill="url(#passGradient)"/>
+    <rect x="35" y="55" width="57" height="11" rx="5.5" fill="#FFFFFF" opacity="0.96"/>
+    <rect x="35" y="75" width="88" height="7" rx="3.5" fill="#FFFFFF" opacity="0.44"/>
+    <circle cx="35" cy="99" r="8.5" fill="#FFFFFF"/>
+    <circle cx="58" cy="99" r="8.5" fill="#FFFFFF"/>
+    <circle cx="81" cy="99" r="8.5" fill="#FFFFFF"/>
+    <circle cx="104" cy="99" r="8.5" fill="#FFFFFF" opacity="0.72"/>
+    <rect x="119" y="95" width="15" height="8" rx="4" fill="#FFFFFF" opacity="0.72"/>
+  </g>
+  <g transform="translate(178 49)">
+    <text x="0" y="51" fill="#FFFFFF" font-family="Inter, Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="53" font-weight="760" letter-spacing="0">Just</text>
+    <text x="119" y="51" fill="#7DD3FC" font-family="Inter, Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="53" font-weight="760" letter-spacing="0">Loyalty</text>
+    <text x="2" y="82" fill="#C9D8E5" font-family="Inter, Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="15" font-weight="520" letter-spacing="0">Digital wallet loyalty for growing merchants</text>
+  </g>
+</svg>
