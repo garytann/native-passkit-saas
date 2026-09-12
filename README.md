@@ -186,6 +186,7 @@ This starts:
 - `db` - Postgres 16, with a persistent named volume.
 - `backend` - Go API inside the Compose network.
 - `web` - React admin console inside the Compose network.
+- `landing` - Static Just Loyalty marketing site inside the Compose network.
 - `proxy` - Nginx reverse proxy on HTTP and HTTPS.
 
 Use the proxy URL for both app and API access:
@@ -195,7 +196,19 @@ https://your-domain.example/
 https://your-domain.example/api/v1/healthz
 ```
 
-The proxy redirects HTTP to HTTPS, routes `/api/v1/...` to the Go backend, and routes all other paths to the React web app. This keeps the browser on one origin, which is closer to the shape you would deploy behind a public load balancer later.
+The proxy redirects HTTP to HTTPS and separates the public website from the
+merchant application by hostname:
+
+- `www.just-loyalty.com` serves the landing site.
+- `just-loyalty.com` redirects to `www.just-loyalty.com`.
+- `app.just-loyalty.com` serves the React merchant and business consoles.
+- `/api/v1/...` on the app hostname routes to the Go backend.
+
+Create DNS `A` or `AAAA` records for the apex, `www`, and `app` hostnames that
+point to the deployment server. The TLS certificate mounted into the proxy must
+cover `just-loyalty.com`, `www.just-loyalty.com`, and `app.just-loyalty.com`.
+The landing page calls to action already link to the merchant registration and
+login pages on `app.just-loyalty.com`.
 
 Set your public domain in `.env`:
 
