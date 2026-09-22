@@ -202,7 +202,26 @@ export default function AdminConsolePage() {
               {activeStep === "design" ? <DesignStep onboarding={onboarding} busy={status === "saving"} onSave={(values, files) => runAction(async () => {
                 let assetBundleRef = onboarding.design?.asset_bundle_ref || onboarding.merchant.merchant_slug;
                 if (files) { const form = new FormData(); assetNames.forEach((name) => form.append(name, files[name])); const uploaded = await api(`/admin/merchants/${selectedID}/apple-wallet/pass-assets`, { method: "PUT", body: form }); assetBundleRef = uploaded.asset_bundle_ref; }
-                await api(`/admin/merchants/${selectedID}/apple-wallet/pass-design`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pass_type_identifier: onboarding.pass_type.pass_type_identifier, program_name: values.programName, pass_description: values.passDescription, stamp_goal: Number(values.stampGoal), background_color: values.backgroundColor, foreground_color: values.foregroundColor, label_color: values.labelColor, asset_bundle_ref: assetBundleRef, support_text: values.supportText, terms_text: values.termsText, campaign_display_mode: "details" }) });
+                await api(`/admin/merchants/${selectedID}/apple-wallet/pass-design`, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    pass_type_identifier: onboarding.pass_type.pass_type_identifier,
+                    program_name: values.programName,
+                    pass_description: values.passDescription,
+                    stamp_goal: Number(values.stampGoal),
+                    background_color: values.backgroundColor,
+                    foreground_color: values.foregroundColor,
+                    label_color: values.labelColor,
+                    asset_bundle_ref: assetBundleRef,
+                    stamp_instructions: values.stampInstructions,
+                    reward_details: values.rewardDetails,
+                    support_text: values.supportText,
+                    terms_text: values.termsText,
+                    links: passLinks(values),
+                    campaign_display_mode: "details",
+                  }),
+                });
               }, "Pass artwork and design saved.")} /> : null}
               {activeStep === "activate" ? <ActivationStep onboarding={onboarding} busy={status === "saving"} onActivate={() => runAction(() => api(`/admin/merchants/${selectedID}/apple-wallet/activate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pass_type_identifier: onboarding.pass_type?.pass_type_identifier }) }), "Merchant Apple Wallet issuance is active.")} /> : null}
             </section>
@@ -233,9 +252,57 @@ function CertificateStep({ onboarding, busy, onSave }) {
 
 function DesignStep({ onboarding, busy, onSave }) {
   const existing = onboarding.design;
-  const [values, setValues] = useState({ programName: existing?.program_name ?? `${onboarding.merchant.merchant} Loyalty Program`, passDescription: existing?.pass_description ?? `Collect stamps and enjoy rewards at ${onboarding.merchant.merchant}.`, stampGoal: existing?.stamp_goal ?? 10, backgroundColor: existing?.background_color ?? "#5434F5", foregroundColor: existing?.foreground_color ?? "#FFFFFF", labelColor: existing?.label_color ?? "#E1DCFF", supportText: existing?.support_text ?? `Contact ${onboarding.merchant.merchant} for loyalty card assistance.`, termsText: existing?.terms_text ?? "Collect one stamp for each eligible purchase. Rewards are subject to outlet terms." });
-  const [files, setFiles] = useState({}); const completeFiles = assetNames.every((name) => files[name]);
-  return <StepShell eyebrow="Wallet appearance" title="Upload artwork and define the pass" description="The same validated artwork and fields are used for both the preview and issued Wallet pass."><form className="onboarding-form design-form" onSubmit={(event) => { event.preventDefault(); onSave(values, completeFiles ? files : null); }}><Field label="Program name"><input value={values.programName} onChange={(event) => setValues({ ...values, programName: event.target.value })} required /></Field><Field label="Stamp goal"><input type="number" min="1" max="100" value={values.stampGoal} onChange={(event) => setValues({ ...values, stampGoal: event.target.value })} required /></Field><Field label="Pass description" wide><textarea value={values.passDescription} onChange={(event) => setValues({ ...values, passDescription: event.target.value })} required /></Field><div className="color-fields"><ColorField label="Background" value={values.backgroundColor} onChange={(value) => setValues({ ...values, backgroundColor: value })} /><ColorField label="Text" value={values.foregroundColor} onChange={(value) => setValues({ ...values, foregroundColor: value })} /><ColorField label="Labels" value={values.labelColor} onChange={(value) => setValues({ ...values, labelColor: value })} /></div><div className="asset-file-grid">{assetNames.map((name) => <FileField key={name} label={name} hint={files[name]?.name ?? (onboarding.assets_uploaded ? "Already uploaded" : "PNG required")} accept="image/png" onChange={(file) => setFiles((current) => ({ ...current, [name]: file }))} />)}</div><Field label="Support text" wide><input value={values.supportText} onChange={(event) => setValues({ ...values, supportText: event.target.value })} /></Field><Field label="Terms" wide><textarea value={values.termsText} onChange={(event) => setValues({ ...values, termsText: event.target.value })} /></Field><button className="primary-action" disabled={busy || (!onboarding.assets_uploaded && !completeFiles) || !onboarding.certificate_validated} type="submit">Save pass design<ChevronRight size={17} /></button></form></StepShell>;
+  const existingLinks = Object.fromEntries((existing?.links ?? []).map((link) => [link.link_type, link.url]));
+  const [values, setValues] = useState({
+    programName: existing?.program_name ?? `${onboarding.merchant.merchant} Loyalty Program`,
+    passDescription: existing?.pass_description ?? `Collect stamps and enjoy rewards at ${onboarding.merchant.merchant}.`,
+    stampGoal: existing?.stamp_goal ?? 10,
+    backgroundColor: existing?.background_color ?? "#5434F5",
+    foregroundColor: existing?.foreground_color ?? "#FFFFFF",
+    labelColor: existing?.label_color ?? "#E1DCFF",
+    stampInstructions: existing?.stamp_instructions ?? "Present this pass when making an eligible purchase to collect a stamp.",
+    rewardDetails: existing?.reward_details ?? "Complete your stamp card to receive the merchant reward.",
+    supportText: existing?.support_text ?? `Contact ${onboarding.merchant.merchant} for loyalty card assistance.`,
+    termsText: existing?.terms_text ?? "Collect one stamp for each eligible purchase. Rewards are subject to outlet terms.",
+    websiteURL: existingLinks.website ?? "",
+    instagramURL: existingLinks.instagram ?? "",
+    whatsappURL: existingLinks.whatsapp ?? "",
+  });
+  const [files, setFiles] = useState({});
+  const completeFiles = assetNames.every((name) => files[name]);
+  const update = (field) => (event) => setValues((current) => ({ ...current, [field]: event.target.value }));
+
+  return (
+    <StepShell eyebrow="Wallet appearance" title="Upload artwork and define the pass" description="The same validated artwork and information are used for both the preview and issued Wallet pass.">
+      <form className="onboarding-form design-form" onSubmit={(event) => { event.preventDefault(); onSave(values, completeFiles ? files : null); }}>
+        <Field label="Program name"><input value={values.programName} onChange={update("programName")} required /></Field>
+        <Field label="Stamp goal"><input type="number" min="1" max="100" value={values.stampGoal} onChange={update("stampGoal")} required /></Field>
+        <Field label="Pass description" wide><textarea value={values.passDescription} onChange={update("passDescription")} required /></Field>
+        <Field label="How to collect stamps" wide><textarea value={values.stampInstructions} onChange={update("stampInstructions")} required /></Field>
+        <Field label="Reward details" wide><textarea value={values.rewardDetails} onChange={update("rewardDetails")} required /></Field>
+        <div className="color-fields">
+          <ColorField label="Background" value={values.backgroundColor} onChange={(value) => setValues({ ...values, backgroundColor: value })} />
+          <ColorField label="Text" value={values.foregroundColor} onChange={(value) => setValues({ ...values, foregroundColor: value })} />
+          <ColorField label="Labels" value={values.labelColor} onChange={(value) => setValues({ ...values, labelColor: value })} />
+        </div>
+        <div className="asset-file-grid">{assetNames.map((name) => <FileField key={name} label={name} hint={files[name]?.name ?? (onboarding.assets_uploaded ? "Already uploaded" : "PNG required")} accept="image/png" onChange={(file) => setFiles((current) => ({ ...current, [name]: file }))} />)}</div>
+        <Field label="Website URL" wide><input type="url" value={values.websiteURL} onChange={update("websiteURL")} placeholder="https://merchant.example" /></Field>
+        <Field label="Instagram URL" wide><input type="url" value={values.instagramURL} onChange={update("instagramURL")} placeholder="https://instagram.com/merchant" /></Field>
+        <Field label="WhatsApp URL" wide><input type="url" value={values.whatsappURL} onChange={update("whatsappURL")} placeholder="https://wa.me/6591234567" /></Field>
+        <Field label="Customer support" wide><textarea value={values.supportText} onChange={update("supportText")} required /></Field>
+        <Field label="Terms and conditions" wide><textarea value={values.termsText} onChange={update("termsText")} required /></Field>
+        <button className="primary-action" disabled={busy || (!onboarding.assets_uploaded && !completeFiles) || !onboarding.certificate_validated} type="submit">Save pass design<ChevronRight size={17} /></button>
+      </form>
+    </StepShell>
+  );
+}
+
+function passLinks(values) {
+  return [
+    { link_type: "website", label: "Website", url: values.websiteURL },
+    { link_type: "instagram", label: "Instagram", url: values.instagramURL },
+    { link_type: "whatsapp", label: "WhatsApp", url: values.whatsappURL },
+  ].filter((link) => link.url.trim());
 }
 
 function ActivationStep({ onboarding, busy, onActivate }) {

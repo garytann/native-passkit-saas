@@ -28,10 +28,11 @@ import {
 } from "lucide-react";
 import BrandLogo from "./components/BrandLogo.jsx";
 import { API_BASE, API_VERSION_PREFIX, DEFAULT_MERCHANT, MERCHANT_SESSION_KEY } from "./config/api";
+import PassesPage from "./pages/Passes.jsx";
 
 const navItems = [
   { label: "Dashboard", icon: Home, key: "dashboard" },
-  { label: "Passes", icon: WalletCards },
+  { label: "Passes", icon: WalletCards, key: "passes" },
   { label: "Customers", icon: Users, key: "customers" },
   { label: "Campaigns", icon: Ticket, key: "campaigns" },
   { label: "Analytics", icon: ChartNoAxesCombined },
@@ -277,7 +278,9 @@ export default function App() {
       <main className="workspace">
         <Topbar activeView={activeView} onNavigate={setActiveView} onLogout={logout} onOpenMenu={() => setMobileNavOpen(true)} />
 
-        {activeView === "customers" ? (
+        {activeView === "passes" ? (
+          <PassesPage session={session} />
+        ) : activeView === "customers" ? (
           <CustomersContent
             customerTab={customerTab}
             setCustomerTab={setCustomerTab}
