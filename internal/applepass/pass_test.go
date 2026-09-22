@@ -8,12 +8,17 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 		TeamID:           "TEAM12345",
 		OrganizationName: "Just Loyalty",
 	}, StampCardDesign{
-		ProgramName:         "Coffee Brew Loyalty Program",
-		PassDescription:     "Collect stamps and enjoy rewards at Coffee Brew.",
-		StampGoal:           12,
-		BackgroundColor:     "#5434F5",
-		ForegroundColor:     "#FFFFFF",
-		LabelColor:          "#E1DCFF",
+		ProgramName:       "Coffee Brew Loyalty Program",
+		PassDescription:   "Collect stamps and enjoy rewards at Coffee Brew.",
+		StampGoal:         12,
+		BackgroundColor:   "#5434F5",
+		ForegroundColor:   "#FFFFFF",
+		LabelColor:        "#E1DCFF",
+		StampInstructions: "Scan this pass at checkout.",
+		RewardDetails:     "Receive a complimentary coffee after 12 stamps.",
+		Links: []StampCardLink{
+			{Key: "instagram", Label: "Instagram", URL: "https://instagram.com/coffeebrew"},
+		},
 		CampaignDisplayMode: "details",
 	}, StampCardMember{
 		ID:         "MBR-12345",
@@ -55,6 +60,17 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 	}
 	if latestOffer.Value != "Free pastry this Friday" || latestOffer.ChangeMessage != "New offer: %@" {
 		t.Fatalf("unexpected latest offer field: %+v", latestOffer)
+	}
+	progress, ok := fieldByKey(pass.StoreCard.BackFields, "reward_progress")
+	if !ok || progress.Value != "6 stamps remaining." {
+		t.Fatalf("unexpected reward progress field: %+v", progress)
+	}
+	instagram, ok := fieldByKey(pass.StoreCard.BackFields, "link_instagram")
+	if !ok || instagram.Value != "https://instagram.com/coffeebrew" {
+		t.Fatalf("unexpected Instagram field: %+v", instagram)
+	}
+	if _, ok := fieldByKey(pass.StoreCard.BackFields, "powered_by"); !ok {
+		t.Fatal("expected Just Loyalty attribution on pass details")
 	}
 	if _, ok := fieldByKey(pass.StoreCard.BackFields, "member"); ok {
 		t.Fatal("expected member name to be omitted from pass fields")

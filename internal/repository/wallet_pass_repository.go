@@ -82,6 +82,17 @@ func (r WalletPassRepository) TouchBySerial(ctx context.Context, serialNumber st
 	return nil
 }
 
+func (r WalletPassRepository) TouchByPassTypeIdentifier(ctx context.Context, passTypeIdentifier string) (int64, error) {
+	result := r.db.WithContext(ctx).
+		Model(&walletPassModel{}).
+		Where("pass_type_identifier = ?", passTypeIdentifier).
+		Update("last_updated_at", time.Now().UTC())
+	if result.Error != nil {
+		return 0, fmt.Errorf("touch wallet passes by pass type: %w", result.Error)
+	}
+	return result.RowsAffected, nil
+}
+
 func walletPassFromModel(walletPass walletPassModel) domain.WalletPass {
 	return domain.WalletPass{
 		PassTypeIdentifier:  walletPass.PassTypeIdentifier,

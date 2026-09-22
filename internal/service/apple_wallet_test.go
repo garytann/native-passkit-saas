@@ -79,6 +79,50 @@ func TestValidatePassAssetBundleRejectsIncorrectScale(t *testing.T) {
 	}
 }
 
+func TestValidatePassDesignRequestAcceptsWalletInformation(t *testing.T) {
+	input := UpsertApplePassDesignRequest{
+		MerchantID:         "MCH-TEST1234",
+		PassTypeIdentifier: "pass.com.justloyalty.test",
+		ProgramName:        "Test Loyalty",
+		PassDescription:    "Collect stamps and enjoy rewards.",
+		StampGoal:          10,
+		BackgroundColor:    "#5434F5",
+		ForegroundColor:    "#FFFFFF",
+		LabelColor:         "#E1DCFF",
+		Links: []ApplePassLinkRequest{
+			{LinkType: "instagram", Label: "Instagram", URL: "https://instagram.com/test"},
+			{LinkType: "whatsapp", Label: "WhatsApp", URL: "https://wa.me/6591234567"},
+		},
+	}
+	normalizePassDesignRequest(&input)
+	if err := validatePassDesignRequest(input); err != nil {
+		t.Fatalf("expected pass information to validate, got %v", err)
+	}
+	if input.StampInstructions == "" || input.RewardDetails == "" {
+		t.Fatal("expected information defaults to be populated")
+	}
+}
+
+func TestValidatePassDesignRequestRejectsInsecureLink(t *testing.T) {
+	input := UpsertApplePassDesignRequest{
+		MerchantID:         "MCH-TEST1234",
+		PassTypeIdentifier: "pass.com.justloyalty.test",
+		ProgramName:        "Test Loyalty",
+		PassDescription:    "Collect stamps and enjoy rewards.",
+		StampGoal:          10,
+		BackgroundColor:    "#5434F5",
+		ForegroundColor:    "#FFFFFF",
+		LabelColor:         "#E1DCFF",
+		Links: []ApplePassLinkRequest{
+			{LinkType: "website", Label: "Website", URL: "http://example.com"},
+		},
+	}
+	normalizePassDesignRequest(&input)
+	if err := validatePassDesignRequest(input); err == nil {
+		t.Fatal("expected non-HTTPS pass link to fail validation")
+	}
+}
+
 func writeTestAppleCredential(t *testing.T, passTypeIdentifier string, teamIdentifier string) (string, string, string) {
 	t.Helper()
 	now := time.Now().UTC()

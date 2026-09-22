@@ -240,6 +240,14 @@ func (s PassService) stampCardPass(ctx context.Context, member applepass.StampCa
 	if err != nil {
 		return applepass.Pass{}, domain.ApplePassDesign{}, err
 	}
+	links := make([]applepass.StampCardLink, 0, len(design.Links))
+	for _, link := range design.Links {
+		links = append(links, applepass.StampCardLink{
+			Key:   link.LinkType,
+			Label: link.Label,
+			URL:   link.URL,
+		})
+	}
 
 	pass := applepass.NewStampCardPass(applepass.TemplateConfig{
 		PassTypeID:          credential.PassTypeIdentifier,
@@ -254,8 +262,11 @@ func (s PassService) stampCardPass(ctx context.Context, member applepass.StampCa
 		BackgroundColor:     design.BackgroundColor,
 		ForegroundColor:     design.ForegroundColor,
 		LabelColor:          design.LabelColor,
+		StampInstructions:   design.StampInstructions,
+		RewardDetails:       design.RewardDetails,
 		SupportText:         design.SupportText,
 		TermsText:           design.TermsText,
+		Links:               links,
 		CampaignDisplayMode: design.CampaignDisplayMode,
 	}, member)
 	return pass, design, nil
@@ -345,6 +356,8 @@ func (s PassService) activeDesign(ctx context.Context, applePassTypeID string, m
 		BackgroundColor:     "#5434F5",
 		ForegroundColor:     "#FFFFFF",
 		LabelColor:          "#E1DCFF",
+		StampInstructions:   "Present this pass when making an eligible purchase to collect a stamp.",
+		RewardDetails:       "Complete your stamp card to receive the merchant reward.",
 		SupportText:         "Contact the merchant for loyalty card assistance.",
 		TermsText:           "Collect one stamp for each eligible purchase. Rewards are subject to outlet terms.",
 		CampaignDisplayMode: "details",

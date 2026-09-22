@@ -204,6 +204,36 @@ func TestUpdateMemberStampsRequiresMerchantToken(t *testing.T) {
 	}
 }
 
+func TestMerchantPassDesignRequiresMerchantToken(t *testing.T) {
+	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080"}, nil, nil)
+	routes := server.Routes()
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/merchants/me/apple-wallet/pass-design", nil)
+	routes.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected merchant pass design route to require auth token, got %d", response.Code)
+	}
+}
+
+func TestMerchantPassDesignUsesAuthenticatedMerchant(t *testing.T) {
+	const secret = "merchant-pass-design-test-secret"
+	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080", AuthTokenSecret: secret}, nil, nil)
+	routes := server.Routes()
+	token, err := service.NewTokenManager(secret).IssueMerchantToken("MCH-REAL1234", "Registered Coffee")
+	if err != nil {
+		t.Fatalf("issue merchant token: %v", err)
+	}
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/merchants/me/apple-wallet/pass-design", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	routes.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected authenticated request to reach unavailable repository, got %d: %s", response.Code, response.Body.String())
+	}
+}
+
 func TestAppleWalletAdminRouteRequiresAdminToken(t *testing.T) {
 	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080", AdminAPIToken: "admin-secret"}, nil, nil)
 	routes := server.Routes()

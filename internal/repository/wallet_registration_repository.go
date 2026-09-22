@@ -110,6 +110,22 @@ func (r WalletRegistrationRepository) ListBySerialNumber(ctx context.Context, se
 	return registrations, nil
 }
 
+func (r WalletRegistrationRepository) ListByPassTypeIdentifier(ctx context.Context, passTypeIdentifier string) ([]domain.WalletRegistration, error) {
+	var rows []walletRegistrationModel
+	if err := r.db.WithContext(ctx).
+		Where("pass_type_identifier = ?", passTypeIdentifier).
+		Order("registered_at ASC").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list wallet registrations by pass type: %w", err)
+	}
+
+	registrations := make([]domain.WalletRegistration, 0, len(rows))
+	for _, row := range rows {
+		registrations = append(registrations, walletRegistrationFromModel(row))
+	}
+	return registrations, nil
+}
+
 func (r WalletRegistrationRepository) ListUpdatedSerialNumbers(ctx context.Context, deviceLibraryIdentifier string, passTypeIdentifier string, since *time.Time) ([]string, time.Time, error) {
 	type updatedPassRow struct {
 		SerialNumber  string

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"image"
 	_ "image/png"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -85,9 +86,18 @@ type UpsertApplePassDesignRequest struct {
 	ForegroundColor     string
 	LabelColor          string
 	AssetBundleRef      string
+	StampInstructions   string
+	RewardDetails       string
 	SupportText         string
 	TermsText           string
+	Links               []ApplePassLinkRequest
 	CampaignDisplayMode string
+}
+
+type ApplePassLinkRequest struct {
+	LinkType string `json:"link_type"`
+	Label    string `json:"label"`
+	URL      string `json:"url"`
 }
 
 var credentialAliasPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -328,6 +338,21 @@ func (s AppleWalletService) UpsertPassDesign(ctx context.Context, input UpsertAp
 	if err != nil {
 		return domain.ApplePassDesign{}, err
 	}
+	links := make([]domain.UpsertApplePassLinkInput, 0, len(input.Links))
+	for index, link := range input.Links {
+		linkID, err := domain.NewApplePassLinkID()
+		if err != nil {
+			return domain.ApplePassDesign{}, err
+		}
+		links = append(links, domain.UpsertApplePassLinkInput{
+			LinkID:    linkID,
+			LinkType:  link.LinkType,
+			Label:     link.Label,
+			URL:       link.URL,
+			SortOrder: index,
+		})
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 	return s.repo.UpsertPassDesign(ctx, domain.UpsertApplePassDesignInput{
@@ -341,8 +366,11 @@ func (s AppleWalletService) UpsertPassDesign(ctx context.Context, input UpsertAp
 		ForegroundColor:     strings.ToUpper(input.ForegroundColor),
 		LabelColor:          strings.ToUpper(input.LabelColor),
 		AssetBundleRef:      input.AssetBundleRef,
+		StampInstructions:   input.StampInstructions,
+		RewardDetails:       input.RewardDetails,
 		SupportText:         input.SupportText,
 		TermsText:           input.TermsText,
+		Links:               links,
 		CampaignDisplayMode: input.CampaignDisplayMode,
 	})
 }
@@ -363,6 +391,8 @@ func normalizePassDesignRequest(input *UpsertApplePassDesignRequest) {
 	input.ForegroundColor = strings.TrimSpace(input.ForegroundColor)
 	input.LabelColor = strings.TrimSpace(input.LabelColor)
 	input.AssetBundleRef = strings.TrimSpace(strings.ToLower(input.AssetBundleRef))
+	input.StampInstructions = strings.TrimSpace(input.StampInstructions)
+	input.RewardDetails = strings.TrimSpace(input.RewardDetails)
 	input.SupportText = strings.TrimSpace(input.SupportText)
 	input.TermsText = strings.TrimSpace(input.TermsText)
 	input.CampaignDisplayMode = strings.TrimSpace(strings.ToLower(input.CampaignDisplayMode))
@@ -381,11 +411,22 @@ func normalizePassDesignRequest(input *UpsertApplePassDesignRequest) {
 	if input.SupportText == "" {
 		input.SupportText = "Contact the merchant for loyalty card assistance."
 	}
+	if input.StampInstructions == "" {
+		input.StampInstructions = "Present this pass when making an eligible purchase to collect a stamp."
+	}
+	if input.RewardDetails == "" {
+		input.RewardDetails = "Complete your stamp card to receive the merchant reward."
+	}
 	if input.TermsText == "" {
 		input.TermsText = "Collect one stamp for each eligible purchase. Rewards are subject to outlet terms."
 	}
 	if input.CampaignDisplayMode == "" {
 		input.CampaignDisplayMode = "details"
+	}
+	for index := range input.Links {
+		input.Links[index].LinkType = strings.ToLower(strings.TrimSpace(input.Links[index].LinkType))
+		input.Links[index].Label = strings.TrimSpace(input.Links[index].Label)
+		input.Links[index].URL = strings.TrimSpace(input.Links[index].URL)
 	}
 }
 
@@ -409,8 +450,41 @@ func validatePassDesignRequest(input UpsertApplePassDesignRequest) error {
 		return ValidationError{Message: "pass colors must use six-digit hex values such as #5434F5"}
 	case input.AssetBundleRef != "" && !credentialAliasPattern.MatchString(input.AssetBundleRef):
 		return ValidationError{Message: "asset_bundle_ref must contain lowercase letters, numbers, or hyphens"}
+	case len(input.StampInstructions) > 500:
+		return ValidationError{Message: "stamp_instructions must be 500 characters or fewer"}
+	case len(input.RewardDetails) > 500:
+		return ValidationError{Message: "reward_details must be 500 characters or fewer"}
+	case len(input.SupportText) > 500:
+		return ValidationError{Message: "support_text must be 500 characters or fewer"}
+	case len(input.TermsText) > 5000:
+		return ValidationError{Message: "terms_text must be 5000 characters or fewer"}
 	case input.CampaignDisplayMode != "none" && input.CampaignDisplayMode != "details":
 		return ValidationError{Message: "campaign_display_mode must be none or details"}
+	}
+	if len(input.Links) > 5 {
+		return ValidationError{Message: "no more than 5 pass links are allowed"}
+	}
+	seenTypes := make(map[string]struct{}, len(input.Links))
+	for _, link := range input.Links {
+		switch link.LinkType {
+		case "website", "instagram", "whatsapp", "custom":
+		default:
+			return ValidationError{Message: "link_type must be website, instagram, whatsapp, or custom"}
+		}
+		if _, exists := seenTypes[link.LinkType]; exists {
+			return ValidationError{Message: "each pass link type can only be used once"}
+		}
+		seenTypes[link.LinkType] = struct{}{}
+		if link.Label == "" || len(link.Label) > 40 {
+			return ValidationError{Message: "link label is required and must be 40 characters or fewer"}
+		}
+		if len(link.URL) > 500 {
+			return ValidationError{Message: "link URL must be 500 characters or fewer"}
+		}
+		parsed, err := url.ParseRequestURI(link.URL)
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+			return ValidationError{Message: "pass links must use a valid HTTPS URL"}
+		}
 	}
 	return nil
 }

@@ -24,10 +24,12 @@ type CampaignRepository interface {
 type WalletRegistrationRepository interface {
 	service.WalletRegistrationRepository
 	service.CampaignWalletRegistrationRepository
+	service.PassDesignWalletRegistrationRepository
 }
 
 type WalletPassRepository interface {
 	service.WalletPassRepository
+	service.PassDesignWalletPassRepository
 }
 
 type AppleWalletRepository interface {
@@ -74,6 +76,7 @@ func (s Server) Routes() http.Handler {
 	appleWalletService := service.NewAppleWalletService(s.cfg, s.appleWalletRepo)
 	passService := service.NewPassServiceWithWalletPassesAndCampaigns(s.cfg, s.memberRepo, s.walletPassRepo, s.campaignRepo, linker, appleWalletService)
 	apnsSender := service.NewAPNSPassUpdateSender(s.cfg, appleWalletService)
+	merchantPassDesignService := service.NewMerchantPassDesignService(appleWalletService, s.walletPassRepo, s.walletRegistrationRepo, apnsSender)
 	memberService := service.NewMemberServiceWithWalletUpdates(s.memberRepo, s.merchantRepo, linker, passService, s.walletRegistrationRepo, apnsSender)
 	merchantService := service.NewMerchantService(s.merchantRepo, tokenManager, s.cfg.TeamID)
 	adminOnboardingService := service.NewAdminOnboardingService(merchantService, appleWalletService)
@@ -83,6 +86,7 @@ func (s Server) Routes() http.Handler {
 	healthController := controller.HealthController{}
 	customerController := controller.NewCustomerController(memberService, tokenManager, v1.Path("/public/merchants/"))
 	merchantController := controller.NewMerchantController(merchantService)
+	merchantPassDesignController := controller.NewMerchantPassDesignController(merchantPassDesignService, tokenManager)
 	passController := controller.NewPassController(passService, walletService, v1.Path("/apple/passes/"))
 	campaignController := controller.NewCampaignController(campaignService, tokenManager)
 	adminAuthController := controller.NewAdminAuthController(s.cfg.PlatformAdminEmail, s.cfg.PlatformAdminPassword, tokenManager)
@@ -96,6 +100,7 @@ func (s Server) Routes() http.Handler {
 	v1.HandleFunc("/public/merchants/", method(http.MethodPost, customerController.RegisterPublicMember))
 	v1.HandleFunc("/merchants/register", method(http.MethodPost, merchantController.RegisterMerchant))
 	v1.HandleFunc("/merchants/login", method(http.MethodPost, merchantController.LoginMerchant))
+	v1.HandleFunc("/merchants/me/apple-wallet/pass-design", merchantPassDesignController.Routes)
 	v1.HandleFunc("/admin/auth/login", method(http.MethodPost, adminAuthController.Login))
 	v1.HandleFunc("/admin/merchants", method(http.MethodGet, appleWalletAdminController.ListMerchants))
 	v1.HandleFunc("/admin/merchants/", appleWalletAdminController.Routes)

@@ -46,17 +46,20 @@ type provisionAppleCertificateRequest struct {
 }
 
 type upsertApplePassDesignRequest struct {
-	PassTypeIdentifier  string `json:"pass_type_identifier"`
-	ProgramName         string `json:"program_name"`
-	PassDescription     string `json:"pass_description"`
-	StampGoal           int    `json:"stamp_goal"`
-	BackgroundColor     string `json:"background_color"`
-	ForegroundColor     string `json:"foreground_color"`
-	LabelColor          string `json:"label_color"`
-	AssetBundleRef      string `json:"asset_bundle_ref"`
-	SupportText         string `json:"support_text"`
-	TermsText           string `json:"terms_text"`
-	CampaignDisplayMode string `json:"campaign_display_mode"`
+	PassTypeIdentifier  string                         `json:"pass_type_identifier"`
+	ProgramName         string                         `json:"program_name"`
+	PassDescription     string                         `json:"pass_description"`
+	StampGoal           int                            `json:"stamp_goal"`
+	BackgroundColor     string                         `json:"background_color"`
+	ForegroundColor     string                         `json:"foreground_color"`
+	LabelColor          string                         `json:"label_color"`
+	AssetBundleRef      string                         `json:"asset_bundle_ref"`
+	StampInstructions   string                         `json:"stamp_instructions"`
+	RewardDetails       string                         `json:"reward_details"`
+	SupportText         string                         `json:"support_text"`
+	TermsText           string                         `json:"terms_text"`
+	Links               []service.ApplePassLinkRequest `json:"links"`
+	CampaignDisplayMode string                         `json:"campaign_display_mode"`
 }
 
 type updatePaymentStatusRequest struct {
@@ -315,8 +318,11 @@ func (c AppleWalletAdminController) upsertPassDesign(w http.ResponseWriter, r *h
 		ForegroundColor:     request.ForegroundColor,
 		LabelColor:          request.LabelColor,
 		AssetBundleRef:      request.AssetBundleRef,
+		StampInstructions:   request.StampInstructions,
+		RewardDetails:       request.RewardDetails,
 		SupportText:         request.SupportText,
 		TermsText:           request.TermsText,
+		Links:               request.Links,
 		CampaignDisplayMode: request.CampaignDisplayMode,
 	})
 	if err != nil {

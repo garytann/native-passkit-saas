@@ -72,22 +72,25 @@ type AppleSigningCertificate struct {
 }
 
 type ApplePassDesign struct {
-	DesignID            string    `json:"design_id"`
-	ApplePassTypeID     string    `json:"apple_pass_type_id"`
-	ProgramName         string    `json:"program_name"`
-	PassDescription     string    `json:"pass_description"`
-	StampGoal           int       `json:"stamp_goal"`
-	BackgroundColor     string    `json:"background_color"`
-	ForegroundColor     string    `json:"foreground_color"`
-	LabelColor          string    `json:"label_color"`
-	AssetBundleRef      string    `json:"asset_bundle_ref"`
-	SupportText         string    `json:"support_text"`
-	TermsText           string    `json:"terms_text"`
-	CampaignDisplayMode string    `json:"campaign_display_mode"`
-	Status              string    `json:"status"`
-	Version             int       `json:"version"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	DesignID            string          `json:"design_id"`
+	ApplePassTypeID     string          `json:"apple_pass_type_id"`
+	ProgramName         string          `json:"program_name"`
+	PassDescription     string          `json:"pass_description"`
+	StampGoal           int             `json:"stamp_goal"`
+	BackgroundColor     string          `json:"background_color"`
+	ForegroundColor     string          `json:"foreground_color"`
+	LabelColor          string          `json:"label_color"`
+	AssetBundleRef      string          `json:"asset_bundle_ref"`
+	StampInstructions   string          `json:"stamp_instructions"`
+	RewardDetails       string          `json:"reward_details"`
+	SupportText         string          `json:"support_text"`
+	TermsText           string          `json:"terms_text"`
+	Links               []ApplePassLink `json:"links"`
+	CampaignDisplayMode string          `json:"campaign_display_mode"`
+	Status              string          `json:"status"`
+	Version             int             `json:"version"`
+	CreatedAt           time.Time       `json:"created_at"`
+	UpdatedAt           time.Time       `json:"updated_at"`
 }
 
 type UpsertApplePassDesignInput struct {
@@ -101,9 +104,28 @@ type UpsertApplePassDesignInput struct {
 	ForegroundColor     string
 	LabelColor          string
 	AssetBundleRef      string
+	StampInstructions   string
+	RewardDetails       string
 	SupportText         string
 	TermsText           string
+	Links               []UpsertApplePassLinkInput
 	CampaignDisplayMode string
+}
+
+type ApplePassLink struct {
+	LinkID    string `json:"link_id"`
+	LinkType  string `json:"link_type"`
+	Label     string `json:"label"`
+	URL       string `json:"url"`
+	SortOrder int    `json:"sort_order"`
+}
+
+type UpsertApplePassLinkInput struct {
+	LinkID    string
+	LinkType  string
+	Label     string
+	URL       string
+	SortOrder int
 }
 
 type ActivateAppleSigningCertificateInput struct {
@@ -154,4 +176,8 @@ func NewAppleCertificateID() (string, error) {
 
 func NewApplePassDesignID() (string, error) {
 	return newReadableID("DSN-")
+}
+
+func NewApplePassLinkID() (string, error) {
+	return newReadableID("LNK-")
 }

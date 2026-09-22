@@ -73,9 +73,18 @@ type StampCardDesign struct {
 	BackgroundColor     string
 	ForegroundColor     string
 	LabelColor          string
+	StampInstructions   string
+	RewardDetails       string
 	SupportText         string
 	TermsText           string
+	Links               []StampCardLink
 	CampaignDisplayMode string
+}
+
+type StampCardLink struct {
+	Key   string
+	Label string
+	URL   string
 }
 
 func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCardMember) Pass {
@@ -87,6 +96,31 @@ func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCa
 		MessageEncoding: "iso-8859-1",
 		AltText:         member.BarcodeID,
 	}
+	backFields := []Field{
+		{Key: "about", Label: "About This Programme", Value: design.PassDescription},
+	}
+	if design.CampaignDisplayMode == "details" && member.Promotion != "" {
+		backFields = append(backFields, Field{
+			Key:           "latest_offer",
+			Label:         "Latest Promotion",
+			Value:         member.Promotion,
+			ChangeMessage: "New offer: %@",
+		})
+	}
+	backFields = append(backFields,
+		Field{Key: "stamp_instructions", Label: "How to Collect Stamps", Value: design.StampInstructions},
+		Field{Key: "reward_details", Label: "Reward Details", Value: design.RewardDetails},
+		Field{Key: "reward_progress", Label: "Stamps Until Next Reward", Value: rewardProgress(member.StampCount, member.StampGoal)},
+		Field{Key: "member_id", Label: "Member ID", Value: member.ID},
+	)
+	for _, link := range design.Links {
+		backFields = append(backFields, Field{Key: "link_" + link.Key, Label: link.Label, Value: link.URL})
+	}
+	backFields = append(backFields,
+		Field{Key: "support", Label: "Questions? Contact the Merchant", Value: design.SupportText},
+		Field{Key: "terms", Label: "Terms and Conditions", Value: design.TermsText},
+		Field{Key: "powered_by", Label: "Powered by Just Loyalty", Value: "https://www.just-loyalty.com"},
+	)
 	pass := Pass{
 		FormatVersion:      1,
 		PassTypeIdentifier: cfg.PassTypeID,
@@ -111,12 +145,7 @@ func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCa
 			PrimaryFields: []Field{
 				{Key: "loyalty_program", Label: "Loyalty Card", Value: design.ProgramName},
 			},
-			BackFields: []Field{
-				{Key: "about", Label: "About", Value: design.PassDescription},
-				{Key: "member_id", Label: "Member ID", Value: member.ID},
-				{Key: "support", Label: "Support", Value: design.SupportText},
-				{Key: "terms", Label: "Terms", Value: design.TermsText},
-			},
+			BackFields: backFields,
 		},
 		UserInfo: map[string]string{
 			"memberID":       member.ID,
@@ -126,12 +155,6 @@ func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCa
 	}
 
 	if design.CampaignDisplayMode == "details" && member.Promotion != "" {
-		pass.StoreCard.BackFields = append(pass.StoreCard.BackFields, Field{
-			Key:           "latest_offer",
-			Label:         "Latest Offer",
-			Value:         member.Promotion,
-			ChangeMessage: "New offer: %@",
-		})
 		pass.UserInfo["promotion"] = member.Promotion
 	}
 
@@ -168,6 +191,12 @@ func normalizeStampCardDesign(design StampCardDesign, member StampCardMember) St
 	if design.SupportText == "" {
 		design.SupportText = "Contact the merchant for loyalty card assistance."
 	}
+	if design.StampInstructions == "" {
+		design.StampInstructions = "Present this pass when making an eligible purchase to collect a stamp."
+	}
+	if design.RewardDetails == "" {
+		design.RewardDetails = "Complete your stamp card to receive the merchant reward."
+	}
 	if design.TermsText == "" {
 		design.TermsText = "Collect one stamp for each eligible purchase. Rewards are subject to outlet terms."
 	}
@@ -202,4 +231,15 @@ func loyaltyProgramName(member StampCardMember) string {
 
 func stampProgress(count int, goal int) string {
 	return fmt.Sprintf("%d / %d", count, goal)
+}
+
+func rewardProgress(count int, goal int) string {
+	remaining := goal - count
+	if remaining <= 0 {
+		return "Your next reward is ready."
+	}
+	if remaining == 1 {
+		return "1 stamp remaining."
+	}
+	return fmt.Sprintf("%d stamps remaining.", remaining)
 }
