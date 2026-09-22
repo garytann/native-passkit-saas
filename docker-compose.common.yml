@@ -1,0 +1,103 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_ADMIN_DB:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "psql -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\" -c 'SELECT 1' >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  db-init:
+    image: postgres:16-alpine
+    profiles:
+      - db-admin
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_ADMIN_DB: ${POSTGRES_ADMIN_DB:-postgres}
+      APP_DATABASE_NAME: ${APP_DATABASE_NAME:-passkit_wip}
+    command: >
+      sh -ec '
+        if psql -d "$${POSTGRES_ADMIN_DB}" -tAc "SELECT 1 FROM pg_database WHERE datname = '\''$${APP_DATABASE_NAME}'\''" | grep -q 1; then
+          echo "database $${APP_DATABASE_NAME} already exists";
+        else
+          createdb "$${APP_DATABASE_NAME}";
+          echo "created database $${APP_DATABASE_NAME}";
+        fi
+      '
+
+  db-migrate:
+    image: postgres:16-alpine
+    profiles:
+      - db-admin
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      APP_DATABASE_NAME: ${APP_DATABASE_NAME:-passkit_wip}
+    volumes:
+      - ./migrations:/migrations:ro
+    command: >
+      sh -ec '
+        for file in /migrations/*.sql; do
+          echo "applying $${file}";
+          psql -v ON_ERROR_STOP=1 -d "$${APP_DATABASE_NAME}" -f "$${file}";
+        done
+      '
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: ${PORT:-8080}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL is required}
+      DATABASE_URL: postgres://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${APP_DATABASE_NAME:-passkit_wip}?sslmode=disable
+      AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:?AUTH_TOKEN_SECRET is required}
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-}
+      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-}
+      PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-}
+      APPLE_CERTIFICATE_BASE_PATH: ${APPLE_CERTIFICATE_BASE_PATH:-certs}
+      APPLE_PASS_ASSET_BASE_PATH: ${APPLE_PASS_ASSET_BASE_PATH:-pass-assets}
+      APPLE_PASS_TYPE_ID: ${APPLE_PASS_TYPE_ID:?APPLE_PASS_TYPE_ID is required}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:?APPLE_TEAM_ID is required}
+      APPLE_ORGANIZATION_NAME: ${APPLE_ORGANIZATION_NAME:?APPLE_ORGANIZATION_NAME is required}
+      APPLE_WEB_SERVICE_URL: ${APPLE_WEB_SERVICE_URL:-}
+      APPLE_APNS_ENDPOINT: ${APPLE_APNS_ENDPOINT:-https://api.push.apple.com}
+      APPLE_PASS_CERT_PATH: ${APPLE_PASS_CERT_PATH:-certs/pass-cert.pem}
+      APPLE_PASS_KEY_PATH: ${APPLE_PASS_KEY_PATH:-certs/pass-key.pem}
+      APPLE_WWDR_CERT_PATH: ${APPLE_WWDR_CERT_PATH:-certs/wwdr.pem}
+      OPENSSL_BIN: ${OPENSSL_BIN:-openssl}
+    volumes:
+      - ./certs:/app/certs
+      - ./pass-assets:/app/pass-assets
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
