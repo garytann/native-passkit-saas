@@ -640,6 +640,14 @@ curl -X PUT https://loyalty.example.com/api/v1/admin/merchants/MCH-EXAMPLE/apple
     "foreground_color": "#FFFFFF",
     "label_color": "#E1DCFF",
     "asset_bundle_ref": "luckin-coffee",
+    "stamp_instructions": "Present this pass when making an eligible purchase to collect a stamp.",
+    "reward_details": "Complete your stamp card to receive one complimentary drink.",
+    "support_text": "Questions? Contact hello@luckin.example.",
+    "terms_text": "One stamp per eligible transaction. Rewards cannot be exchanged for cash.",
+    "links": [
+      {"link_type":"website","label":"Website","url":"https://luckin.example"},
+      {"link_type":"instagram","label":"Instagram","url":"https://instagram.com/luckin.example"}
+    ],
     "campaign_display_mode": "details"
   }'
 ```
@@ -647,6 +655,29 @@ curl -X PUT https://loyalty.example.com/api/v1/admin/merchants/MCH-EXAMPLE/apple
 `campaign_display_mode: details` keeps the active campaign in the pass back
 field `latest_offer`. Its `changeMessage` still produces the Wallet campaign
 notification, but campaign copy is not displayed on the pass front.
+
+After activation, the merchant can maintain the customer-facing information
+from the **Passes** section of the merchant portal. The portal uses the
+authenticated endpoint below; callers cannot select another merchant ID:
+
+```text
+GET /api/v1/merchants/me/apple-wallet/pass-design
+PUT /api/v1/merchants/me/apple-wallet/pass-design
+```
+
+Publishing increments the design version, marks that merchant's issued passes
+as updated, and sends an empty APNs Wallet update notification to registered
+devices. Wallet then requests the newly signed pass. The active campaign is
+still managed from **Campaigns**, stamp progress is calculated per member, and
+the `Powered by Just Loyalty` link is platform-controlled.
+
+Apply the pass-information schema migration before deploying a backend that
+uses these fields:
+
+```bash
+docker compose --profile db-admin run --rm db-migrate
+docker compose up -d --build
+```
 
 Inspect the resulting configuration with:
 
