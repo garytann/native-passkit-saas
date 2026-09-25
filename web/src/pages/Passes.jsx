@@ -13,6 +13,7 @@ const emptyForm = {
   programName: "",
   passDescription: "",
   stampGoal: 10,
+  rewardTitle: "",
   stampInstructions: "",
   rewardDetails: "",
   supportText: "",
@@ -73,6 +74,7 @@ export default function PassesPage({ session }) {
           program_name: form.programName,
           pass_description: form.passDescription,
           stamp_goal: Number(form.stampGoal),
+          reward_title: form.rewardTitle,
           stamp_instructions: form.stampInstructions,
           reward_details: form.rewardDetails,
           support_text: form.supportText,
@@ -123,7 +125,8 @@ export default function PassesPage({ session }) {
           <form className="pass-information-form" onSubmit={publish}>
             <PassFormSection title="Programme and reward" description="These details explain what the loyalty programme offers.">
               <PassField label="Programme name"><input value={form.programName} onChange={update("programName")} maxLength={80} required /></PassField>
-              <PassField label="Stamp goal"><input type="number" min="1" max="100" value={form.stampGoal} onChange={update("stampGoal")} required /></PassField>
+              <PassField label="Stamp goal"><input type="number" min="1" max="100" value={form.stampGoal} readOnly title="The stamp goal is locked after pass activation" required /></PassField>
+              <PassField label="Reward title"><input value={form.rewardTitle} onChange={update("rewardTitle")} maxLength={40} placeholder="Free Coffee" required /></PassField>
               <PassField label="Pass description" wide><textarea value={form.passDescription} onChange={update("passDescription")} maxLength={160} required /></PassField>
               <PassField label="How to collect stamps" wide><textarea value={form.stampInstructions} onChange={update("stampInstructions")} maxLength={500} required /></PassField>
               <PassField label="Reward details" wide><textarea value={form.rewardDetails} onChange={update("rewardDetails")} maxLength={500} required /></PassField>
@@ -150,13 +153,20 @@ export default function PassesPage({ session }) {
             {message ? <p className={`passes-message ${status === "error" ? "error" : ""}`}>{message}</p> : null}
           </form>
 
-          <aside className="pass-details-preview" aria-label="Apple Wallet information preview">
-            <div className="preview-title"><Smartphone size={20} /><div><span>Information preview</span><small>{passTypeIdentifier}</small></div></div>
+          <aside className="pass-details-preview" aria-label="Apple Wallet pass preview">
+            <div className="preview-title"><Smartphone size={20} /><div><span>Pass preview</span><small>{passTypeIdentifier}</small></div></div>
+            <div className="wallet-front-sheet">
+              <div className="wallet-front-header"><span>Stamps</span><strong>0 / {form.stampGoal}</strong></div>
+              <div className="wallet-front-primary"><span>Member Rewards</span><strong>{form.programName || "Programme name"}</strong></div>
+              <div className="wallet-front-secondary"><span>Next Reward</span><strong>{form.rewardTitle || "Loyalty Reward"}</strong></div>
+            </div>
+            <div className="wallet-preview-divider"><span>Information</span></div>
             <div className="wallet-details-sheet">
               <PreviewItem label="About This Programme" value={form.passDescription} />
               <PreviewItem label="Latest Promotion" value="Managed from Campaigns" muted />
               <PreviewItem label="How to Collect Stamps" value={form.stampInstructions} />
               <PreviewItem label="Reward Details" value={form.rewardDetails} />
+              <PreviewItem label="Rewards Earned" value="Calculated for each member" muted />
               <PreviewItem label="Stamps Until Next Reward" value="Calculated for each member" muted />
               {links.map((link) => <PreviewItem key={link.link_type} label={link.label} value={link.url} link />)}
               <PreviewItem label="Questions? Contact the Merchant" value={form.supportText} />
@@ -193,6 +203,7 @@ function formFromDesign(design) {
     programName: design?.program_name ?? "",
     passDescription: design?.pass_description ?? "",
     stampGoal: design?.stamp_goal ?? 10,
+    rewardTitle: design?.reward_title ?? "Loyalty Reward",
     stampInstructions: design?.stamp_instructions ?? "",
     rewardDetails: design?.reward_details ?? "",
     supportText: design?.support_text ?? "",

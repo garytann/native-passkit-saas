@@ -210,6 +210,7 @@ export default function AdminConsolePage() {
                     program_name: values.programName,
                     pass_description: values.passDescription,
                     stamp_goal: Number(values.stampGoal),
+                    reward_title: values.rewardTitle,
                     background_color: values.backgroundColor,
                     foreground_color: values.foregroundColor,
                     label_color: values.labelColor,
@@ -257,6 +258,7 @@ function DesignStep({ onboarding, busy, onSave }) {
     programName: existing?.program_name ?? `${onboarding.merchant.merchant} Loyalty Program`,
     passDescription: existing?.pass_description ?? `Collect stamps and enjoy rewards at ${onboarding.merchant.merchant}.`,
     stampGoal: existing?.stamp_goal ?? 10,
+    rewardTitle: existing?.reward_title ?? "Loyalty Reward",
     backgroundColor: existing?.background_color ?? "#5434F5",
     foregroundColor: existing?.foreground_color ?? "#FFFFFF",
     labelColor: existing?.label_color ?? "#E1DCFF",
@@ -276,7 +278,8 @@ function DesignStep({ onboarding, busy, onSave }) {
     <StepShell eyebrow="Wallet appearance" title="Upload artwork and define the pass" description="The same validated artwork and information are used for both the preview and issued Wallet pass.">
       <form className="onboarding-form design-form" onSubmit={(event) => { event.preventDefault(); onSave(values, completeFiles ? files : null); }}>
         <Field label="Program name"><input value={values.programName} onChange={update("programName")} required /></Field>
-        <Field label="Stamp goal"><input type="number" min="1" max="100" value={values.stampGoal} onChange={update("stampGoal")} required /></Field>
+        <Field label="Stamp goal"><input type="number" min="1" max="100" value={values.stampGoal} onChange={update("stampGoal")} readOnly={existing?.status === "active"} required /></Field>
+        <Field label="Reward title"><input value={values.rewardTitle} onChange={update("rewardTitle")} maxLength={40} placeholder="Free Coffee" required /></Field>
         <Field label="Pass description" wide><textarea value={values.passDescription} onChange={update("passDescription")} required /></Field>
         <Field label="How to collect stamps" wide><textarea value={values.stampInstructions} onChange={update("stampInstructions")} required /></Field>
         <Field label="Reward details" wide><textarea value={values.rewardDetails} onChange={update("rewardDetails")} required /></Field>

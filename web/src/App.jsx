@@ -9,6 +9,7 @@ import {
   CircleHelp,
   Download,
   Gauge,
+  Gift,
   Home,
   Layers3,
   Mail,
@@ -47,8 +48,6 @@ const customerTabs = [
   { key: "engagement", label: "Customer Engagement", icon: Megaphone },
 ];
 
-const STAMP_GOAL = 10;
-
 export default function App() {
   const [session, setSession] = useState(null);
   const [activeView, setActiveView] = useState("dashboard");
@@ -62,6 +61,7 @@ export default function App() {
   const [members, setMembers] = useState([]);
   const [membersStatus, setMembersStatus] = useState("idle");
   const [membersError, setMembersError] = useState("");
+  const [stampGoal, setStampGoal] = useState(null);
   const [passLinks, setPassLinks] = useState(null);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
@@ -106,6 +106,7 @@ export default function App() {
     }
     loadMembers(session.token);
     loadCampaigns(session.token);
+    loadPassDesign(session.token);
   }, [session]);
 
   const previewUrl = useMemo(() => {
@@ -193,6 +194,26 @@ export default function App() {
     }
   }
 
+  async function loadPassDesign(token) {
+    if (!token) {
+      return;
+    }
+    try {
+      const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/merchants/me/apple-wallet/pass-design`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        setStampGoal(null);
+        return;
+      }
+      const data = await response.json();
+      const goal = Number(data.design?.stamp_goal);
+      setStampGoal(Number.isInteger(goal) && goal > 0 ? goal : null);
+    } catch {
+      setStampGoal(null);
+    }
+  }
+
   async function createCampaign(event) {
     event.preventDefault();
     if (!session?.token) {
@@ -251,6 +272,31 @@ export default function App() {
     return data;
   }
 
+  async function getMember(memberID) {
+    if (!session?.token) throw new Error("Login session is required");
+    const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/customers/members/${encodeURIComponent(memberID)}`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(payload?.error ?? `Member lookup returned ${response.status}`);
+    return payload;
+  }
+
+  async function mutateMemberReward(memberID, operation) {
+    if (!session?.token) throw new Error("Login session is required");
+    const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/customers/members/${encodeURIComponent(memberID)}/rewards/${operation}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.token}`,
+        "Idempotency-Key": createIdempotencyKey(operation, memberID),
+      },
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(payload?.error ?? `Reward ${operation} returned ${response.status}`);
+    await loadMembers(session.token);
+    return payload;
+  }
+
   function logout() {
     window.localStorage.removeItem(MERCHANT_SESSION_KEY);
     window.location.href = "/login";
@@ -296,6 +342,10 @@ export default function App() {
             session={session}
             onRegister={registerMember}
             onUpdateStamps={updateMemberStamps}
+            onGetMember={getMember}
+            onIssueReward={(memberID) => mutateMemberReward(memberID, "issue")}
+            onRedeemReward={(memberID) => mutateMemberReward(memberID, "redeem")}
+            stampGoal={stampGoal}
           />
         ) : activeView === "campaigns" ? (
           <CampaignsContent
@@ -310,7 +360,7 @@ export default function App() {
             onCreate={createCampaign}
           />
         ) : (
-          <DashboardContent members={members} membersStatus={membersStatus} membersError={membersError} />
+          <DashboardContent members={members} membersStatus={membersStatus} membersError={membersError} stampGoal={stampGoal} />
         )}
       </main>
     </div>
@@ -419,8 +469,8 @@ function PageHeading({ current, title, actionLabel = "New Campaign" }) {
   );
 }
 
-function DashboardContent({ members, membersStatus, membersError }) {
-  const insights = dashboardInsights(members);
+function DashboardContent({ members, membersStatus, membersError, stampGoal }) {
+  const insights = dashboardInsights(members, stampGoal);
 
   return (
     <>
@@ -430,7 +480,7 @@ function DashboardContent({ members, membersStatus, membersError }) {
         <MetricCard label="Total passes issued" value={formatNumber(insights.totalPasses)} delta="Merchant members" icon={WalletCards} />
         <MetricCard label="Active customers" value={formatNumber(insights.activeCustomers)} delta={formatShare(insights.activeCustomers, insights.totalPasses)} icon={Users} />
         <MetricCard label="Reward ready" value={formatNumber(insights.rewardReady)} delta={formatShare(insights.rewardReady, insights.totalPasses)} icon={Sparkles} />
-        <MetricCard label="Average stamp progress" value={`${insights.averageStampProgress} / ${STAMP_GOAL}`} delta="Across active records" icon={QrCode} />
+        <MetricCard label="Average stamp progress" value={`${insights.averageStampProgress} / ${stampGoal ?? "-"}`} delta="Across active records" icon={QrCode} />
       </section>
 
       <section className="dashboard-grid">
@@ -441,11 +491,12 @@ function DashboardContent({ members, membersStatus, membersError }) {
   );
 }
 
-function dashboardInsights(members) {
+function dashboardInsights(members, stampGoal) {
   const totalPasses = members.length;
   const activeCustomers = members.filter((member) => member.status === "active").length;
-  const rewardReady = members.filter((member) => member.status === "reward_ready" || Number(member.stamp_progress) >= STAMP_GOAL).length;
-  const activeInProgress = members.filter((member) => member.status === "active" && Number(member.stamp_progress) < STAMP_GOAL).length;
+  const hasGoal = Number.isInteger(stampGoal) && stampGoal > 0;
+  const rewardReady = members.filter((member) => member.status === "reward_ready" || (hasGoal && Number(member.stamp_progress) >= stampGoal)).length;
+  const activeInProgress = members.filter((member) => member.status === "active" && (!hasGoal || Number(member.stamp_progress) < stampGoal)).length;
   const totalStampProgress = members.reduce((sum, member) => sum + Number(member.stamp_progress || 0), 0);
   const averageStampProgress = totalPasses === 0 ? 0 : Math.round((totalStampProgress / totalPasses) * 10) / 10;
   const statusSegments = [
@@ -547,10 +598,18 @@ function CustomersContent(props) {
             </div>
           </div>
           {props.customerTab === "members" ? (
-            <MembersTable members={props.members} status={props.membersStatus} error={props.membersError} />
+            <MembersTable members={props.members} status={props.membersStatus} error={props.membersError} stampGoal={props.stampGoal} />
           ) : null}
           {props.customerTab === "registration" ? <PassGenerator {...props} /> : null}
-          {props.customerTab === "scanner" ? <StampScanner onUpdateStamps={props.onUpdateStamps} /> : null}
+          {props.customerTab === "scanner" ? (
+            <StampScanner
+              onGetMember={props.onGetMember}
+              onUpdateStamps={props.onUpdateStamps}
+              onIssueReward={props.onIssueReward}
+              onRedeemReward={props.onRedeemReward}
+              stampGoal={props.stampGoal}
+            />
+          ) : null}
           {props.customerTab === "engagement" ? <CustomerEngagement /> : null}
         </div>
       </section>
@@ -789,7 +848,7 @@ function slugify(value) {
     .replace(/^-+|-+$/g, "") || "merchant";
 }
 
-function MembersTable({ members, status, error }) {
+function MembersTable({ members, status, error, stampGoal }) {
   const activeMembers = members.filter((member) => member.status === "active").length;
   const rewardReadyMembers = members.filter((member) => member.status === "reward_ready").length;
 
@@ -810,6 +869,7 @@ function MembersTable({ members, status, error }) {
               <th>Name</th>
               <th>Email</th>
               <th>Stamp progress</th>
+              <th>Available rewards</th>
               <th>Status</th>
               <th>Joined</th>
             </tr>
@@ -820,14 +880,15 @@ function MembersTable({ members, status, error }) {
                 <td data-label="Customer ID">{member.member_id}</td>
                 <td data-label="Name">{member.customer_name}</td>
                 <td data-label="Email">{member.customer_email}</td>
-                <td data-label="Stamp progress">{member.stamp_progress} / 10</td>
+                <td data-label="Stamp progress">{member.stamp_progress} / {stampGoal ?? "-"}</td>
+                <td data-label="Available rewards">{member.available_rewards ?? 0}</td>
                 <td data-label="Status"><span className="status-pill">{member.status}</span></td>
                 <td data-label="Joined">{formatDate(member.creation_date)}</td>
               </tr>
             ))}
             {status !== "loading" && members.length === 0 ? (
               <tr>
-                <td colSpan={6}>No members registered for this merchant yet.</td>
+                <td colSpan={7}>No members registered for this merchant yet.</td>
               </tr>
             ) : null}
           </tbody>
@@ -837,19 +898,20 @@ function MembersTable({ members, status, error }) {
   );
 }
 
-function StampScanner({ onUpdateStamps }) {
+function StampScanner({ onGetMember, onUpdateStamps, onIssueReward, onRedeemReward, stampGoal }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const scanTimerRef = useRef(null);
   const detectorRef = useRef(null);
   const detectInProgressRef = useRef(false);
-  const stampUpdateInProgressRef = useRef(false);
+  const operationInProgressRef = useRef(false);
   const [memberID, setMemberID] = useState("");
   const [cameraStatus, setCameraStatus] = useState("idle");
   const [status, setStatus] = useState("idle");
   const [message, setMessage] = useState("");
-  const [lastUpdate, setLastUpdate] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [confirmation, setConfirmation] = useState(null);
 
   useEffect(() => {
     return () => stopCamera();
@@ -907,7 +969,7 @@ function StampScanner({ onUpdateStamps }) {
   async function scanFrame() {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas || video.readyState < 2 || detectInProgressRef.current || stampUpdateInProgressRef.current) {
+    if (!video || !canvas || video.readyState < 2 || detectInProgressRef.current || operationInProgressRef.current) {
       return;
     }
 
@@ -930,7 +992,7 @@ function StampScanner({ onUpdateStamps }) {
       if (scannedID) {
         setMemberID(scannedID);
         stopCamera();
-        await updateStampForMember(scannedID, "scan");
+        await lookupMember(scannedID, "scan");
       } else {
         setMessage("QR code scanned, but no member ID was found.");
       }
@@ -941,34 +1003,68 @@ function StampScanner({ onUpdateStamps }) {
     }
   }
 
-  async function addStamp(event) {
+  async function findMember(event) {
     event.preventDefault();
-    await updateStampForMember(memberID, "manual");
+    await lookupMember(memberID, "manual");
   }
 
-  async function updateStampForMember(value, source) {
+  async function lookupMember(value, source) {
     const safeMemberID = normalizeMemberIDInput(value);
     if (!safeMemberID) {
       setMessage("Scan or enter a member ID first.");
       return;
     }
-    if (stampUpdateInProgressRef.current) {
+    if (operationInProgressRef.current) {
       return;
     }
 
-    stampUpdateInProgressRef.current = true;
+    operationInProgressRef.current = true;
     setStatus("loading");
-    setMessage(source === "scan" ? `Scanned ${safeMemberID}. Updating stamp progress...` : "");
+    setMessage(source === "scan" ? `Scanned ${safeMemberID}. Loading customer...` : "");
     try {
-      const result = await onUpdateStamps(safeMemberID, 1);
-      setLastUpdate(result);
+      const result = await onGetMember(safeMemberID);
+      setSelected(result);
       setStatus("ready");
-      setMessage(`Added 1 stamp for ${result.member.customer_name}.${walletUpdateMessage(result.wallet_update)}`);
+      setMessage(`Loaded ${result.member.customer_name}. Choose an action below.`);
+    } catch (err) {
+      setSelected(null);
+      setStatus("error");
+      setMessage(err instanceof Error ? err.message : "Unable to load customer");
+    } finally {
+      operationInProgressRef.current = false;
+    }
+  }
+
+  async function runAction(action) {
+    if (!selected?.member || operationInProgressRef.current) return;
+    operationInProgressRef.current = true;
+    setStatus("loading");
+    setMessage("");
+    try {
+      let result;
+      if (action === "stamp") {
+        result = await onUpdateStamps(selected.member.member_id, 1);
+        setSelected((current) => ({
+          ...current,
+          member: result.member,
+          stamp_goal: result.event.stamp_goal ?? current.stamp_goal,
+        }));
+        setMessage(`Added 1 stamp for ${result.member.customer_name}.${walletUpdateMessage(result.wallet_update)}`);
+      } else {
+        result = action === "issue"
+          ? await onIssueReward(selected.member.member_id)
+          : await onRedeemReward(selected.member.member_id);
+        setSelected({ member: result.member, stamp_goal: result.stamp_goal, reward_title: result.reward_title });
+        const verb = action === "issue" ? "Issued" : "Redeemed";
+        setMessage(`${verb} 1 ${result.reward_title}.${walletUpdateMessage(result.wallet_update)}`);
+      }
+      setStatus("ready");
     } catch (err) {
       setStatus("error");
-      setMessage(err instanceof Error ? err.message : "Unable to update stamp progress");
+      setMessage(err instanceof Error ? err.message : "Unable to complete this action");
     } finally {
-      stampUpdateInProgressRef.current = false;
+      operationInProgressRef.current = false;
+      setConfirmation(null);
     }
   }
 
@@ -1023,11 +1119,11 @@ function StampScanner({ onUpdateStamps }) {
           </div>
         </section>
 
-        <form className="scanner-form" onSubmit={addStamp}>
+        <form className="scanner-form" onSubmit={findMember}>
           <div className="panel-heading tight">
             <div>
-              <span className="eyebrow">Stamp update</span>
-              <h2>Add one stamp</h2>
+              <span className="eyebrow">Customer lookup</span>
+              <h2>Review loyalty status</h2>
             </div>
           </div>
           <label htmlFor="scannerMemberID">Member ID</label>
@@ -1038,19 +1134,54 @@ function StampScanner({ onUpdateStamps }) {
             onChange={(event) => setMemberID(normalizeMemberIDInput(event.target.value))}
           />
           <button className="primary-action" type="submit" disabled={status === "loading"}>
-            <Plus size={18} />
-            {status === "loading" ? "Adding Stamp" : "Add Stamp"}
+            <Search size={18} />
+            {status === "loading" ? "Loading Customer" : "Find Customer"}
           </button>
           {message ? <p className={`scanner-message ${status === "error" || (cameraStatus === "error" && status !== "ready") ? "error" : ""}`}>{message}</p> : null}
-          {lastUpdate ? (
-            <div className="stamp-result">
-              <span>{lastUpdate.member.member_id}</span>
-              <strong>{lastUpdate.event.new_stamp_progress} / 10 stamps</strong>
-              <em>{lastUpdate.member.status}</em>
+          {selected?.member ? (
+            <div className="scanner-member">
+              <div className="scanner-member-heading">
+                <div><span>Customer</span><strong>{selected.member.customer_name}</strong></div>
+                <span className="status-pill">{selected.member.status}</span>
+              </div>
+              <dl className="scanner-member-stats">
+                <div><dt>Member ID</dt><dd>{selected.member.member_id}</dd></div>
+                <div><dt>Stamp progress</dt><dd>{selected.member.stamp_progress} / {selected.stamp_goal ?? stampGoal ?? "-"}</dd></div>
+                <div><dt>Available rewards</dt><dd>{selected.member.available_rewards ?? 0}</dd></div>
+                <div><dt>Next reward</dt><dd>{selected.reward_title ?? "Loyalty Reward"}</dd></div>
+              </dl>
+              <div className="scanner-member-actions">
+                <button className="secondary-action" type="button" onClick={() => runAction("stamp")} disabled={status === "loading" || selected.member.status === "inactive" || selected.member.stamp_progress >= selected.stamp_goal}>
+                  <Plus size={17} /> Add Stamp
+                </button>
+                <button className="secondary-action" type="button" onClick={() => setConfirmation("issue")} disabled={status === "loading" || selected.member.status === "inactive" || selected.member.stamp_progress !== selected.stamp_goal}>
+                  <Gift size={17} /> Issue Reward
+                </button>
+                <button className="primary-action" type="button" onClick={() => setConfirmation("redeem")} disabled={status === "loading" || selected.member.status === "inactive" || (selected.member.available_rewards ?? 0) < 1}>
+                  <Sparkles size={17} /> Redeem Reward
+                </button>
+              </div>
             </div>
           ) : null}
         </form>
       </div>
+      {confirmation ? (
+        <div className="confirmation-backdrop" role="presentation" onMouseDown={() => setConfirmation(null)}>
+          <div className="confirmation-dialog" role="dialog" aria-modal="true" aria-labelledby="reward-confirmation-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="confirmation-icon"><Gift size={22} /></div>
+            <h3 id="reward-confirmation-title">{confirmation === "issue" ? "Issue this reward?" : "Redeem this reward?"}</h3>
+            <p>{confirmation === "issue"
+              ? `This will convert the completed stamp card into 1 ${selected.reward_title} and reset stamp progress.`
+              : `This will redeem 1 ${selected.reward_title}. Current stamp progress will not change.`}</p>
+            <div className="confirmation-actions">
+              <button className="secondary-action" type="button" onClick={() => setConfirmation(null)} disabled={status === "loading"}>Cancel</button>
+              <button className="primary-action" type="button" onClick={() => runAction(confirmation)} disabled={status === "loading"}>
+                {status === "loading" ? "Processing" : confirmation === "issue" ? "Issue Reward" : "Redeem Reward"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -1067,6 +1198,11 @@ function memberIDFromQRCode(value) {
 
 function normalizeMemberIDInput(value) {
   return String(value ?? "").trim().toUpperCase();
+}
+
+function createIdempotencyKey(operation, memberID) {
+  const nonce = window.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${operation}:${memberID}:${nonce}`;
 }
 
 function walletUpdateMessage(walletUpdate) {
