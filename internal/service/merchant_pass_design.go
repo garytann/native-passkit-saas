@@ -34,6 +34,7 @@ type PublishMerchantPassDesignRequest struct {
 	PassDescription   string
 	StampGoal         int
 	StampInstructions string
+	RewardTitle       string
 	RewardDetails     string
 	SupportText       string
 	TermsText         string
@@ -95,6 +96,7 @@ func (s MerchantPassDesignService) Publish(ctx context.Context, input PublishMer
 		LabelColor:          current.Design.LabelColor,
 		AssetBundleRef:      current.Design.AssetBundleRef,
 		StampInstructions:   input.StampInstructions,
+		RewardTitle:         input.RewardTitle,
 		RewardDetails:       input.RewardDetails,
 		SupportText:         input.SupportText,
 		TermsText:           input.TermsText,

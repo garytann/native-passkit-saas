@@ -15,19 +15,21 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 		ForegroundColor:   "#FFFFFF",
 		LabelColor:        "#E1DCFF",
 		StampInstructions: "Scan this pass at checkout.",
+		RewardTitle:       "Free Coffee",
 		RewardDetails:     "Receive a complimentary coffee after 12 stamps.",
 		Links: []StampCardLink{
 			{Key: "instagram", Label: "Instagram", URL: "https://instagram.com/coffeebrew"},
 		},
 		CampaignDisplayMode: "details",
 	}, StampCardMember{
-		ID:         "MBR-12345",
-		FullName:   "Gary Tan",
-		BrandName:  "Coffee Brew",
-		StampCount: 6,
-		StampGoal:  10,
-		BarcodeID:  "stamp-card:MBR-12345",
-		Promotion:  "Free pastry this Friday",
+		ID:               "MBR-12345",
+		FullName:         "Gary Tan",
+		BrandName:        "Coffee Brew",
+		StampCount:       6,
+		StampGoal:        10,
+		AvailableRewards: 2,
+		BarcodeID:        "stamp-card:MBR-12345",
+		Promotion:        "Free pastry this Friday",
 	})
 
 	if pass.LogoText != "" {
@@ -51,8 +53,21 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 	if got := pass.StoreCard.PrimaryFields[0].Value; got != "Coffee Brew Loyalty Program" {
 		t.Fatalf("expected program name, got %v", got)
 	}
-	if len(pass.StoreCard.SecondaryFields) != 0 || len(pass.StoreCard.AuxiliaryFields) != 0 {
-		t.Fatal("expected member, remaining count, and campaign fields to be absent from the pass front")
+	if got := pass.StoreCard.PrimaryFields[0].Label; got != "Member Rewards" {
+		t.Fatalf("expected member rewards label, got %q", got)
+	}
+	if len(pass.StoreCard.SecondaryFields) != 1 {
+		t.Fatalf("expected one next reward field, got %d", len(pass.StoreCard.SecondaryFields))
+	}
+	nextReward := pass.StoreCard.SecondaryFields[0]
+	if nextReward.Label != "Next Reward" || nextReward.Value != "Free Coffee" {
+		t.Fatalf("unexpected next reward field: %+v", nextReward)
+	}
+	if nextReward.ChangeMessage != "Your next reward is now %@." {
+		t.Fatalf("unexpected next reward change message: %q", nextReward.ChangeMessage)
+	}
+	if len(pass.StoreCard.AuxiliaryFields) != 0 {
+		t.Fatal("expected member, remaining count, and campaign fields to be absent from auxiliary fields")
 	}
 	latestOffer, ok := fieldByKey(pass.StoreCard.BackFields, "latest_offer")
 	if !ok {
@@ -64,6 +79,13 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 	progress, ok := fieldByKey(pass.StoreCard.BackFields, "reward_progress")
 	if !ok || progress.Value != "6 stamps remaining." {
 		t.Fatalf("unexpected reward progress field: %+v", progress)
+	}
+	rewards, ok := fieldByKey(pass.StoreCard.BackFields, "rewards_earned")
+	if !ok || rewards.Value != 2 || rewards.ChangeMessage != "Available rewards: %@." {
+		t.Fatalf("unexpected rewards earned field: %+v", rewards)
+	}
+	if pass.UserInfo["availableRewards"] != "2" {
+		t.Fatalf("expected available reward balance in userInfo, got %q", pass.UserInfo["availableRewards"])
 	}
 	instagram, ok := fieldByKey(pass.StoreCard.BackFields, "link_instagram")
 	if !ok || instagram.Value != "https://instagram.com/coffeebrew" {

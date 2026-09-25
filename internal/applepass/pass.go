@@ -48,14 +48,15 @@ type Field struct {
 }
 
 type StampCardMember struct {
-	ID         string
-	FullName   string
-	BrandName  string
-	RewardName string
-	StampCount int
-	StampGoal  int
-	BarcodeID  string
-	Promotion  string
+	ID               string
+	FullName         string
+	BrandName        string
+	RewardName       string
+	StampCount       int
+	StampGoal        int
+	AvailableRewards int
+	BarcodeID        string
+	Promotion        string
 }
 
 type TemplateConfig struct {
@@ -74,6 +75,7 @@ type StampCardDesign struct {
 	ForegroundColor     string
 	LabelColor          string
 	StampInstructions   string
+	RewardTitle         string
 	RewardDetails       string
 	SupportText         string
 	TermsText           string
@@ -110,6 +112,7 @@ func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCa
 	backFields = append(backFields,
 		Field{Key: "stamp_instructions", Label: "How to Collect Stamps", Value: design.StampInstructions},
 		Field{Key: "reward_details", Label: "Reward Details", Value: design.RewardDetails},
+		Field{Key: "rewards_earned", Label: "Rewards Earned", Value: member.AvailableRewards, ChangeMessage: "Available rewards: %@."},
 		Field{Key: "reward_progress", Label: "Stamps Until Next Reward", Value: rewardProgress(member.StampCount, member.StampGoal)},
 		Field{Key: "member_id", Label: "Member ID", Value: member.ID},
 	)
@@ -143,14 +146,23 @@ func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCa
 				},
 			},
 			PrimaryFields: []Field{
-				{Key: "loyalty_program", Label: "Loyalty Card", Value: design.ProgramName},
+				{Key: "loyalty_program", Label: "Member Rewards", Value: design.ProgramName},
+			},
+			SecondaryFields: []Field{
+				{
+					Key:           "next_reward",
+					Label:         "Next Reward",
+					Value:         design.RewardTitle,
+					ChangeMessage: "Your next reward is now %@.",
+				},
 			},
 			BackFields: backFields,
 		},
 		UserInfo: map[string]string{
-			"memberID":       member.ID,
-			"loyaltyProgram": design.ProgramName,
-			"stampCount":     stampProgress(member.StampCount, member.StampGoal),
+			"memberID":         member.ID,
+			"loyaltyProgram":   design.ProgramName,
+			"stampCount":       stampProgress(member.StampCount, member.StampGoal),
+			"availableRewards": strconv.Itoa(member.AvailableRewards),
 		},
 	}
 
@@ -193,6 +205,9 @@ func normalizeStampCardDesign(design StampCardDesign, member StampCardMember) St
 	}
 	if design.StampInstructions == "" {
 		design.StampInstructions = "Present this pass when making an eligible purchase to collect a stamp."
+	}
+	if design.RewardTitle == "" {
+		design.RewardTitle = "Loyalty Reward"
 	}
 	if design.RewardDetails == "" {
 		design.RewardDetails = "Complete your stamp card to receive the merchant reward."

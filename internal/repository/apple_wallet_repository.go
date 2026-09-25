@@ -69,6 +69,7 @@ type applePassDesignModel struct {
 	LabelColor          string    `gorm:"column:label_color;not null"`
 	AssetBundleRef      string    `gorm:"column:asset_bundle_ref;not null"`
 	StampInstructions   string    `gorm:"column:stamp_instructions;not null"`
+	RewardTitle         string    `gorm:"column:reward_title;not null"`
 	RewardDetails       string    `gorm:"column:reward_details;not null"`
 	SupportText         string    `gorm:"column:support_text;not null"`
 	TermsText           string    `gorm:"column:terms_text;not null"`
@@ -300,6 +301,7 @@ func (r AppleWalletRepository) UpsertPassDesign(ctx context.Context, input domai
 			LabelColor:          input.LabelColor,
 			AssetBundleRef:      input.AssetBundleRef,
 			StampInstructions:   input.StampInstructions,
+			RewardTitle:         input.RewardTitle,
 			RewardDetails:       input.RewardDetails,
 			SupportText:         input.SupportText,
 			TermsText:           input.TermsText,
@@ -317,6 +319,7 @@ func (r AppleWalletRepository) UpsertPassDesign(ctx context.Context, input domai
 			"label_color":           input.LabelColor,
 			"asset_bundle_ref":      input.AssetBundleRef,
 			"stamp_instructions":    input.StampInstructions,
+			"reward_title":          input.RewardTitle,
 			"reward_details":        input.RewardDetails,
 			"support_text":          input.SupportText,
 			"terms_text":            input.TermsText,
@@ -580,6 +583,7 @@ func applePassDesignFromModel(model applePassDesignModel) domain.ApplePassDesign
 		LabelColor:          model.LabelColor,
 		AssetBundleRef:      model.AssetBundleRef,
 		StampInstructions:   model.StampInstructions,
+		RewardTitle:         model.RewardTitle,
 		RewardDetails:       model.RewardDetails,
 		SupportText:         model.SupportText,
 		TermsText:           model.TermsText,

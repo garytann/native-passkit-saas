@@ -13,8 +13,18 @@ import (
 type MemberRepository interface {
 	Create(ctx context.Context, input domain.CreateStoreMemberInput) (domain.StoreMember, error)
 	GetByID(ctx context.Context, memberID string) (domain.StoreMember, error)
+	GetByIDForMerchant(ctx context.Context, memberID string, merchant string) (domain.StoreMember, error)
 	ListByMerchant(ctx context.Context, merchant string) ([]domain.StoreMember, error)
-	UpdateStampProgressForMerchant(ctx context.Context, memberID string, merchant string, delta int) (domain.StampUpdate, error)
+	UpdateStampProgressForMerchant(ctx context.Context, memberID string, merchant string, delta int, stampGoal int) (domain.StampUpdate, error)
+	ApplyRewardMutation(ctx context.Context, input domain.RewardMutationInput) (domain.RewardMutation, error)
+}
+
+type StampGoalProvider interface {
+	StampGoalForMerchant(ctx context.Context, merchant string) (int, error)
+}
+
+type RewardTitleProvider interface {
+	RewardTitleForMerchant(ctx context.Context, merchant string) (string, error)
 }
 
 type RegisterMemberInput struct {
@@ -38,6 +48,27 @@ type UpdateMemberStampsInput struct {
 
 type UpdateMemberStampsResult struct {
 	domain.StampUpdate
+	StampGoal    int                  `json:"stamp_goal"`
+	WalletUpdate WalletUpdateDispatch `json:"wallet_update"`
+}
+
+type GetMemberResult struct {
+	Member      domain.StoreMember `json:"member"`
+	StampGoal   int                `json:"stamp_goal"`
+	RewardTitle string             `json:"reward_title"`
+}
+
+type MutateMemberRewardInput struct {
+	MemberID       string
+	MerchantID     string
+	Merchant       string
+	IdempotencyKey string
+}
+
+type MutateMemberRewardResult struct {
+	domain.RewardMutation
+	StampGoal    int                  `json:"stamp_goal"`
+	RewardTitle  string               `json:"reward_title"`
 	WalletUpdate WalletUpdateDispatch `json:"wallet_update"`
 }
 
@@ -55,6 +86,7 @@ type MemberService struct {
 	passUpdater         WalletPassUpdater
 	walletRegistrations CampaignWalletRegistrationRepository
 	pushSender          PassUpdateSender
+	stampGoals          StampGoalProvider
 	timeout             time.Duration
 }
 
@@ -77,6 +109,10 @@ func NewMemberServiceWithMerchants(repo MemberRepository, merchants MerchantLook
 }
 
 func NewMemberServiceWithWalletUpdates(repo MemberRepository, merchants MerchantLookupRepository, linker PassLinker, passUpdater WalletPassUpdater, walletRegistrations CampaignWalletRegistrationRepository, pushSender PassUpdateSender) MemberService {
+	return NewMemberServiceWithWalletUpdatesAndGoals(repo, merchants, linker, passUpdater, walletRegistrations, pushSender, nil)
+}
+
+func NewMemberServiceWithWalletUpdatesAndGoals(repo MemberRepository, merchants MerchantLookupRepository, linker PassLinker, passUpdater WalletPassUpdater, walletRegistrations CampaignWalletRegistrationRepository, pushSender PassUpdateSender, stampGoals StampGoalProvider) MemberService {
 	return MemberService{
 		repo:                repo,
 		merchants:           merchants,
@@ -84,6 +120,7 @@ func NewMemberServiceWithWalletUpdates(repo MemberRepository, merchants Merchant
 		passUpdater:         passUpdater,
 		walletRegistrations: walletRegistrations,
 		pushSender:          pushSender,
+		stampGoals:          stampGoals,
 		timeout:             5 * time.Second,
 	}
 }
@@ -150,6 +187,35 @@ func (s MemberService) ListMembersForMerchant(ctx context.Context, merchant stri
 	return members, nil
 }
 
+func (s MemberService) GetMemberForMerchant(ctx context.Context, memberID string, merchant string) (GetMemberResult, error) {
+	if s.repo == nil {
+		return GetMemberResult{}, ErrRepositoryUnavailable
+	}
+	memberID = strings.TrimSpace(memberID)
+	merchant = strings.TrimSpace(merchant)
+	if memberID == "" {
+		return GetMemberResult{}, ValidationError{Message: "member id is required"}
+	}
+	if merchant == "" {
+		return GetMemberResult{}, ValidationError{Message: "merchant is required"}
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	member, err := s.repo.GetByIDForMerchant(ctx, memberID, merchant)
+	if err != nil {
+		if errors.Is(err, domain.ErrStoreMemberForbidden) {
+			return GetMemberResult{}, ErrForbidden
+		}
+		return GetMemberResult{}, fmt.Errorf("get member for merchant: %w", err)
+	}
+	stampGoal, rewardTitle, err := s.memberProgram(ctx, merchant)
+	if err != nil {
+		return GetMemberResult{}, err
+	}
+	return GetMemberResult{Member: member, StampGoal: stampGoal, RewardTitle: rewardTitle}, nil
+}
+
 func (s MemberService) RegisterMemberByMerchantSlug(ctx context.Context, merchantSlug string, input RegisterMemberInput) (RegisterMemberResult, error) {
 	if s.merchants == nil {
 		return RegisterMemberResult{}, ErrRepositoryUnavailable
@@ -186,7 +252,12 @@ func (s MemberService) UpdateMemberStamps(ctx context.Context, input UpdateMembe
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	update, err := s.repo.UpdateStampProgressForMerchant(ctx, input.MemberID, input.Merchant, input.StampDelta)
+	stampGoal, _, err := s.memberProgram(ctx, input.Merchant)
+	if err != nil {
+		return UpdateMemberStampsResult{}, err
+	}
+
+	update, err := s.repo.UpdateStampProgressForMerchant(ctx, input.MemberID, input.Merchant, input.StampDelta, stampGoal)
 	if err != nil {
 		if errors.Is(err, domain.ErrStoreMemberForbidden) {
 			return UpdateMemberStampsResult{}, ErrForbidden
@@ -196,8 +267,101 @@ func (s MemberService) UpdateMemberStamps(ctx context.Context, input UpdateMembe
 
 	return UpdateMemberStampsResult{
 		StampUpdate:  update,
+		StampGoal:    stampGoal,
 		WalletUpdate: s.dispatchWalletPassUpdate(ctx, update.Member.MemberID),
 	}, nil
+}
+
+func (s MemberService) IssueMemberReward(ctx context.Context, input MutateMemberRewardInput) (MutateMemberRewardResult, error) {
+	return s.mutateMemberReward(ctx, input, "issue")
+}
+
+func (s MemberService) RedeemMemberReward(ctx context.Context, input MutateMemberRewardInput) (MutateMemberRewardResult, error) {
+	return s.mutateMemberReward(ctx, input, "redeem")
+}
+
+func (s MemberService) mutateMemberReward(ctx context.Context, input MutateMemberRewardInput, transactionType string) (MutateMemberRewardResult, error) {
+	if s.repo == nil {
+		return MutateMemberRewardResult{}, ErrRepositoryUnavailable
+	}
+	input.MemberID = strings.TrimSpace(input.MemberID)
+	input.MerchantID = strings.TrimSpace(input.MerchantID)
+	input.Merchant = strings.TrimSpace(input.Merchant)
+	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
+	switch {
+	case input.MemberID == "":
+		return MutateMemberRewardResult{}, ValidationError{Message: "member id is required"}
+	case input.MerchantID == "":
+		return MutateMemberRewardResult{}, ValidationError{Message: "merchant id is required"}
+	case input.Merchant == "":
+		return MutateMemberRewardResult{}, ValidationError{Message: "merchant is required"}
+	case input.IdempotencyKey == "":
+		return MutateMemberRewardResult{}, ValidationError{Message: "Idempotency-Key header is required"}
+	case len(input.IdempotencyKey) > 128:
+		return MutateMemberRewardResult{}, ValidationError{Message: "Idempotency-Key must be 128 characters or fewer"}
+	}
+
+	transactionID, err := domain.NewReadableRewardTransactionID()
+	if err != nil {
+		return MutateMemberRewardResult{}, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	stampGoal, rewardTitle, err := s.memberProgram(ctx, input.Merchant)
+	if err != nil {
+		return MutateMemberRewardResult{}, err
+	}
+	mutation, err := s.repo.ApplyRewardMutation(ctx, domain.RewardMutationInput{
+		TransactionID:   transactionID,
+		MemberID:        input.MemberID,
+		MerchantID:      input.MerchantID,
+		Merchant:        input.Merchant,
+		TransactionType: transactionType,
+		StampGoal:       stampGoal,
+		IdempotencyKey:  input.IdempotencyKey,
+	})
+	if err != nil {
+		if errors.Is(err, domain.ErrStoreMemberForbidden) {
+			return MutateMemberRewardResult{}, ErrForbidden
+		}
+		return MutateMemberRewardResult{}, fmt.Errorf("%s member reward: %w", transactionType, err)
+	}
+
+	result := MutateMemberRewardResult{
+		RewardMutation: mutation,
+		StampGoal:      stampGoal,
+		RewardTitle:    rewardTitle,
+	}
+	if !mutation.Replayed {
+		result.WalletUpdate = s.dispatchWalletPassUpdate(ctx, mutation.Member.MemberID)
+	}
+	return result, nil
+}
+
+func (s MemberService) memberProgram(ctx context.Context, merchant string) (int, string, error) {
+	stampGoal := 10
+	if s.stampGoals != nil {
+		resolvedGoal, err := s.stampGoals.StampGoalForMerchant(ctx, merchant)
+		if err != nil {
+			return 0, "", fmt.Errorf("resolve merchant stamp goal: %w", err)
+		}
+		stampGoal = resolvedGoal
+	}
+	if stampGoal < 1 || stampGoal > 100 {
+		return 0, "", ValidationError{Message: "merchant stamp goal must be between 1 and 100"}
+	}
+	rewardTitle := "Loyalty Reward"
+	if provider, ok := s.stampGoals.(RewardTitleProvider); ok {
+		resolvedTitle, err := provider.RewardTitleForMerchant(ctx, merchant)
+		if err != nil {
+			return 0, "", fmt.Errorf("resolve merchant reward title: %w", err)
+		}
+		if strings.TrimSpace(resolvedTitle) != "" {
+			rewardTitle = strings.TrimSpace(resolvedTitle)
+		}
+	}
+	return stampGoal, rewardTitle, nil
 }
 
 func (s MemberService) dispatchWalletPassUpdate(ctx context.Context, memberID string) WalletUpdateDispatch {

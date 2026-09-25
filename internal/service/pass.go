@@ -263,6 +263,7 @@ func (s PassService) stampCardPass(ctx context.Context, member applepass.StampCa
 		ForegroundColor:     design.ForegroundColor,
 		LabelColor:          design.LabelColor,
 		StampInstructions:   design.StampInstructions,
+		RewardTitle:         design.RewardTitle,
 		RewardDetails:       design.RewardDetails,
 		SupportText:         design.SupportText,
 		TermsText:           design.TermsText,
@@ -357,6 +358,7 @@ func (s PassService) activeDesign(ctx context.Context, applePassTypeID string, m
 		ForegroundColor:     "#FFFFFF",
 		LabelColor:          "#E1DCFF",
 		StampInstructions:   "Present this pass when making an eligible purchase to collect a stamp.",
+		RewardTitle:         "Loyalty Reward",
 		RewardDetails:       "Complete your stamp card to receive the merchant reward.",
 		SupportText:         "Contact the merchant for loyalty card assistance.",
 		TermsText:           "Collect one stamp for each eligible purchase. Rewards are subject to outlet terms.",
@@ -396,12 +398,13 @@ func (s PassService) appleWebServiceURL() string {
 
 func storeMemberToStampCard(member domain.StoreMember) applepass.StampCardMember {
 	return applepass.StampCardMember{
-		ID:         member.MemberID,
-		FullName:   member.CustomerName,
-		BrandName:  member.Merchant,
-		StampCount: member.StampProgress,
-		StampGoal:  10,
-		BarcodeID:  "stamp-card:" + member.MemberID,
+		ID:               member.MemberID,
+		FullName:         member.CustomerName,
+		BrandName:        member.Merchant,
+		StampCount:       member.StampProgress,
+		StampGoal:        10,
+		AvailableRewards: member.AvailableRewards,
+		BarcodeID:        "stamp-card:" + member.MemberID,
 	}
 }
 

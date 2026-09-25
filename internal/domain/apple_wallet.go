@@ -82,6 +82,7 @@ type ApplePassDesign struct {
 	LabelColor          string          `json:"label_color"`
 	AssetBundleRef      string          `json:"asset_bundle_ref"`
 	StampInstructions   string          `json:"stamp_instructions"`
+	RewardTitle         string          `json:"reward_title"`
 	RewardDetails       string          `json:"reward_details"`
 	SupportText         string          `json:"support_text"`
 	TermsText           string          `json:"terms_text"`
@@ -105,6 +106,7 @@ type UpsertApplePassDesignInput struct {
 	LabelColor          string
 	AssetBundleRef      string
 	StampInstructions   string
+	RewardTitle         string
 	RewardDetails       string
 	SupportText         string
 	TermsText           string

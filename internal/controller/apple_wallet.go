@@ -55,6 +55,7 @@ type upsertApplePassDesignRequest struct {
 	LabelColor          string                         `json:"label_color"`
 	AssetBundleRef      string                         `json:"asset_bundle_ref"`
 	StampInstructions   string                         `json:"stamp_instructions"`
+	RewardTitle         string                         `json:"reward_title"`
 	RewardDetails       string                         `json:"reward_details"`
 	SupportText         string                         `json:"support_text"`
 	TermsText           string                         `json:"terms_text"`
@@ -319,6 +320,7 @@ func (c AppleWalletAdminController) upsertPassDesign(w http.ResponseWriter, r *h
 		LabelColor:          request.LabelColor,
 		AssetBundleRef:      request.AssetBundleRef,
 		StampInstructions:   request.StampInstructions,
+		RewardTitle:         request.RewardTitle,
 		RewardDetails:       request.RewardDetails,
 		SupportText:         request.SupportText,
 		TermsText:           request.TermsText,

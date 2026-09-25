@@ -6,6 +6,7 @@ import (
 	"errors"
 	"html/template"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"native-ios-passkit-wip/internal/domain"
@@ -79,6 +80,101 @@ type stampUpdateEvent struct {
 	StampDelta            int `json:"stamp_delta"`
 	PreviousStampProgress int `json:"previous_stamp_progress"`
 	NewStampProgress      int `json:"new_stamp_progress"`
+	StampGoal             int `json:"stamp_goal"`
+}
+
+type memberLookupResponse struct {
+	Member      domain.StoreMember `json:"member"`
+	StampGoal   int                `json:"stamp_goal"`
+	RewardTitle string             `json:"reward_title"`
+}
+
+type memberRewardResponse struct {
+	Member       domain.StoreMember             `json:"member"`
+	Transaction  domain.MemberRewardTransaction `json:"transaction"`
+	Replayed     bool                           `json:"replayed"`
+	StampGoal    int                            `json:"stamp_goal"`
+	RewardTitle  string                         `json:"reward_title"`
+	WalletUpdate service.WalletUpdateDispatch   `json:"wallet_update"`
+}
+
+func (c CustomerController) MemberRoutes(w http.ResponseWriter, r *http.Request) {
+	const prefix = "/api/v1/customers/members/"
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, prefix), "/")
+	parts := strings.Split(path, "/")
+
+	switch {
+	case len(parts) == 1 && parts[0] != "" && r.Method == http.MethodGet:
+		c.GetMember(w, r, parts[0])
+	case len(parts) == 2 && parts[0] != "" && parts[1] == "stamps" && r.Method == http.MethodPut:
+		c.UpdateMemberStamps(w, r)
+	case len(parts) == 3 && parts[0] != "" && parts[1] == "rewards" && parts[2] == "issue" && r.Method == http.MethodPost:
+		c.MutateMemberReward(w, r, parts[0], "issue")
+	case len(parts) == 3 && parts[0] != "" && parts[1] == "rewards" && parts[2] == "redeem" && r.Method == http.MethodPost:
+		c.MutateMemberReward(w, r, parts[0], "redeem")
+	default:
+		writeError(w, http.StatusNotFound, errRouteNotFound.Error())
+	}
+}
+
+func (c CustomerController) GetMember(w http.ResponseWriter, r *http.Request, memberID string) {
+	claims, err := c.merchantClaims(r)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	result, err := c.members.GetMemberForMerchant(r.Context(), memberID, claims.Merchant)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, memberLookupResponse{
+		Member: result.Member, StampGoal: result.StampGoal, RewardTitle: result.RewardTitle,
+	})
+}
+
+func (c CustomerController) MutateMemberReward(w http.ResponseWriter, r *http.Request, memberID string, operation string) {
+	claims, err := c.merchantClaims(r)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	input := service.MutateMemberRewardInput{
+		MemberID:       memberID,
+		MerchantID:     claims.MerchantID,
+		Merchant:       claims.Merchant,
+		IdempotencyKey: r.Header.Get("Idempotency-Key"),
+	}
+	var result service.MutateMemberRewardResult
+	if operation == "issue" {
+		result, err = c.members.IssueMemberReward(r.Context(), input)
+	} else {
+		result, err = c.members.RedeemMemberReward(r.Context(), input)
+	}
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if result.Replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, memberRewardResponse{
+		Member:       result.Member,
+		Transaction:  result.Transaction,
+		Replayed:     result.Replayed,
+		StampGoal:    result.StampGoal,
+		RewardTitle:  result.RewardTitle,
+		WalletUpdate: result.WalletUpdate,
+	})
+}
+
+func (c CustomerController) merchantClaims(r *http.Request) (service.MerchantTokenClaims, error) {
+	token, err := service.BearerToken(r.Header.Get("Authorization"))
+	if err != nil {
+		return service.MerchantTokenClaims{}, err
+	}
+	return c.tokens.VerifyMerchantToken(token)
 }
 
 func (c CustomerController) ListMembers(w http.ResponseWriter, r *http.Request) {
@@ -181,6 +277,7 @@ func (c CustomerController) UpdateMemberStamps(w http.ResponseWriter, r *http.Re
 			StampDelta:            update.StampDelta,
 			PreviousStampProgress: update.PreviousStampProgress,
 			NewStampProgress:      update.NewStampProgress,
+			StampGoal:             update.StampGoal,
 		},
 		WalletUpdate: update.WalletUpdate,
 	})
@@ -498,8 +595,18 @@ func (c PassController) Preview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	templateData := previewPageData{
+		PassPreview: data,
+		PassColorDeclarations: template.CSS(
+			"background: " + string(safePreviewCSSColor(data.Pass.BackgroundColor, "rgb(84, 52, 245)")) + "; " +
+				"color: " + string(safePreviewCSSColor(data.Pass.ForegroundColor, "rgb(255, 255, 255)")) + ";",
+		),
+		LabelColorDeclaration: template.CSS(
+			"color: " + string(safePreviewCSSColor(data.Pass.LabelColor, "rgb(225, 220, 255)")) + ";",
+		),
+	}
 	var out bytes.Buffer
-	if err := previewTemplate.Execute(&out, data); err != nil {
+	if err := previewTemplate.Execute(&out, templateData); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -508,6 +615,21 @@ func (c PassController) Preview(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(out.Bytes())
+}
+
+type previewPageData struct {
+	service.PassPreview
+	PassColorDeclarations template.CSS
+	LabelColorDeclaration template.CSS
+}
+
+var previewCSSColorPattern = regexp.MustCompile(`^(?:#[0-9A-Fa-f]{6}|rgb\([0-9]{1,3}, [0-9]{1,3}, [0-9]{1,3}\))$`)
+
+func safePreviewCSSColor(value string, fallback string) template.CSS {
+	if !previewCSSColorPattern.MatchString(value) {
+		value = fallback
+	}
+	return template.CSS(value)
 }
 
 func (c PassController) QRCode(w http.ResponseWriter, r *http.Request) {
@@ -644,6 +766,14 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "apple wallet configuration already exists")
 	case errors.Is(err, domain.ErrStoreMemberNotFound):
 		writeError(w, http.StatusNotFound, "member not found")
+	case errors.Is(err, domain.ErrMemberInactive):
+		writeError(w, http.StatusConflict, "member is inactive")
+	case errors.Is(err, domain.ErrRewardNotReady):
+		writeError(w, http.StatusConflict, "member has not completed the stamp goal")
+	case errors.Is(err, domain.ErrNoAvailableRewards):
+		writeError(w, http.StatusConflict, "member has no available rewards")
+	case errors.Is(err, domain.ErrIdempotencyKeyConflict):
+		writeError(w, http.StatusConflict, "idempotency key was already used for another operation")
 	default:
 		writeError(w, http.StatusInternalServerError, err.Error())
 	}
@@ -673,8 +803,7 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
       width: min(420px, 100%);
     }
     .pass {
-      background: {{.Pass.BackgroundColor}};
-      color: {{.Pass.ForegroundColor}};
+      {{.PassColorDeclarations}}
       border-radius: 18px;
       overflow: hidden;
       box-shadow: 0 22px 50px rgba(20, 35, 54, .24);
@@ -701,7 +830,7 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
       text-align: right;
     }
     .label {
-      color: {{.Pass.LabelColor}};
+      {{.LabelColorDeclaration}}
       font-size: 10px;
       line-height: 1.2;
       text-transform: uppercase;
@@ -720,6 +849,13 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
     .primary .value {
       font-size: 30px;
       font-weight: 750;
+    }
+    .secondary {
+      padding: 0 24px 22px;
+    }
+    .secondary .value {
+      font-size: 18px;
+      font-weight: 700;
     }
     .barcode {
       background: #fff;
@@ -750,6 +886,32 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
       color: #195da8;
       overflow-wrap: anywhere;
     }
+    .information {
+      margin-top: 18px;
+      padding: 20px 22px;
+      border-radius: 18px;
+      background: #fff;
+      box-shadow: 0 14px 34px rgba(20, 35, 54, .12);
+    }
+    .information h2 {
+      margin: 0 0 16px;
+      font-size: 18px;
+    }
+    .info-field {
+      padding: 12px 0;
+      border-top: 1px solid #e7eaf0;
+    }
+    .info-field:first-of-type {
+      border-top: 0;
+      padding-top: 0;
+    }
+    .info-field .value {
+      color: #313a47;
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
   </style>
 </head>
 <body>
@@ -774,10 +936,25 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
         <div class="value">{{.Value}}</div>
       </div>
       {{end}}
+      {{with index .Pass.StoreCard.SecondaryFields 0}}
+      <div class="secondary">
+        <div class="label">{{.Label}}</div>
+        <div class="value">{{.Value}}</div>
+      </div>
+      {{end}}
       <div class="barcode">
         <img class="qr" src="{{.QRCodeURL}}" alt="QR code for {{.Barcode.AltText}}">
         <div class="alt">{{.Barcode.AltText}}</div>
       </div>
+    </section>
+    <section class="information" aria-label="Apple Wallet pass information">
+      <h2>Pass information</h2>
+      {{range .Pass.StoreCard.BackFields}}
+      <div class="info-field">
+        <div class="label">{{.Label}}</div>
+        <div class="value">{{.Value}}</div>
+      </div>
+      {{end}}
     </section>
     <div class="meta">
       Preview only. Apple Wallet performs the final native rendering after a signed pass is opened on device.

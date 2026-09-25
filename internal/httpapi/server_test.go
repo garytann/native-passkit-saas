@@ -32,12 +32,20 @@ func (*capturingMemberRepository) GetByID(context.Context, string) (domain.Store
 	return domain.StoreMember{}, nil
 }
 
+func (*capturingMemberRepository) GetByIDForMerchant(context.Context, string, string) (domain.StoreMember, error) {
+	return domain.StoreMember{}, nil
+}
+
 func (*capturingMemberRepository) ListByMerchant(context.Context, string) ([]domain.StoreMember, error) {
 	return nil, nil
 }
 
-func (*capturingMemberRepository) UpdateStampProgressForMerchant(context.Context, string, string, int) (domain.StampUpdate, error) {
+func (*capturingMemberRepository) UpdateStampProgressForMerchant(context.Context, string, string, int, int) (domain.StampUpdate, error) {
 	return domain.StampUpdate{}, nil
+}
+
+func (*capturingMemberRepository) ApplyRewardMutation(context.Context, domain.RewardMutationInput) (domain.RewardMutation, error) {
+	return domain.RewardMutation{}, nil
 }
 
 func TestRoutesUseAPIV1Prefix(t *testing.T) {

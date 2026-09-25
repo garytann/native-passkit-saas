@@ -17,13 +17,32 @@ type StoreMemberRepository struct {
 }
 
 type storeMemberModel struct {
-	MemberID      string    `gorm:"column:member_id;primaryKey"`
-	CreationDate  time.Time `gorm:"column:creation_date;default:now()"`
-	CustomerName  string    `gorm:"column:customer_name"`
-	CustomerEmail string    `gorm:"column:customer_email"`
-	Merchant      string    `gorm:"column:merchant;not null;index"`
-	StampProgress int       `gorm:"column:stamp_progress;default:0"`
-	Status        string    `gorm:"column:status;default:active"`
+	MemberID         string    `gorm:"column:member_id;primaryKey"`
+	CreationDate     time.Time `gorm:"column:creation_date;default:now()"`
+	CustomerName     string    `gorm:"column:customer_name"`
+	CustomerEmail    string    `gorm:"column:customer_email"`
+	Merchant         string    `gorm:"column:merchant;not null;index"`
+	StampProgress    int       `gorm:"column:stamp_progress;default:0"`
+	AvailableRewards int       `gorm:"column:available_rewards;default:0"`
+	Status           string    `gorm:"column:status;default:active"`
+}
+
+type memberRewardTransactionModel struct {
+	TransactionID         string    `gorm:"column:transaction_id;primaryKey"`
+	MemberID              string    `gorm:"column:member_id;not null;index"`
+	MerchantID            string    `gorm:"column:merchant_id;not null;index;uniqueIndex:idx_reward_merchant_idempotency"`
+	TransactionType       string    `gorm:"column:transaction_type;not null"`
+	Quantity              int       `gorm:"column:quantity;not null"`
+	PreviousRewardBalance int       `gorm:"column:previous_reward_balance;not null"`
+	NewRewardBalance      int       `gorm:"column:new_reward_balance;not null"`
+	PreviousStampProgress int       `gorm:"column:previous_stamp_progress;not null"`
+	NewStampProgress      int       `gorm:"column:new_stamp_progress;not null"`
+	CreationDate          time.Time `gorm:"column:creation_date;default:now()"`
+	IdempotencyKey        string    `gorm:"column:idempotency_key;not null;uniqueIndex:idx_reward_merchant_idempotency"`
+}
+
+func (memberRewardTransactionModel) TableName() string {
+	return "member_reward_transactions"
 }
 
 func (storeMemberModel) TableName() string {
@@ -92,15 +111,7 @@ func (r StoreMemberRepository) Create(ctx context.Context, input domain.CreateSt
 		return domain.StoreMember{}, fmt.Errorf("create store member: %w", err)
 	}
 
-	return domain.StoreMember{
-		MemberID:      member.MemberID,
-		CreationDate:  member.CreationDate,
-		CustomerName:  member.CustomerName,
-		CustomerEmail: member.CustomerEmail,
-		Merchant:      member.Merchant,
-		StampProgress: member.StampProgress,
-		Status:        member.Status,
-	}, nil
+	return storeMemberFromModel(member), nil
 }
 
 func isForeignKeyViolation(err error) bool {
@@ -117,15 +128,18 @@ func (r StoreMemberRepository) GetByID(ctx context.Context, memberID string) (do
 		return domain.StoreMember{}, fmt.Errorf("get store member by id: %w", err)
 	}
 
-	return domain.StoreMember{
-		MemberID:      member.MemberID,
-		CreationDate:  member.CreationDate,
-		CustomerName:  member.CustomerName,
-		CustomerEmail: member.CustomerEmail,
-		Merchant:      member.Merchant,
-		StampProgress: member.StampProgress,
-		Status:        member.Status,
-	}, nil
+	return storeMemberFromModel(member), nil
+}
+
+func (r StoreMemberRepository) GetByIDForMerchant(ctx context.Context, memberID string, merchantName string) (domain.StoreMember, error) {
+	member, err := r.GetByID(ctx, memberID)
+	if err != nil {
+		return domain.StoreMember{}, err
+	}
+	if member.Merchant != merchantName {
+		return domain.StoreMember{}, domain.ErrStoreMemberForbidden
+	}
+	return member, nil
 }
 
 func (r StoreMemberRepository) ListByMerchant(ctx context.Context, merchantName string) ([]domain.StoreMember, error) {
@@ -139,21 +153,13 @@ func (r StoreMemberRepository) ListByMerchant(ctx context.Context, merchantName 
 
 	members := make([]domain.StoreMember, 0, len(rows))
 	for _, member := range rows {
-		members = append(members, domain.StoreMember{
-			MemberID:      member.MemberID,
-			CreationDate:  member.CreationDate,
-			CustomerName:  member.CustomerName,
-			CustomerEmail: member.CustomerEmail,
-			Merchant:      member.Merchant,
-			StampProgress: member.StampProgress,
-			Status:        member.Status,
-		})
+		members = append(members, storeMemberFromModel(member))
 	}
 
 	return members, nil
 }
 
-func (r StoreMemberRepository) UpdateStampProgressForMerchant(ctx context.Context, memberID string, merchantName string, delta int) (domain.StampUpdate, error) {
+func (r StoreMemberRepository) UpdateStampProgressForMerchant(ctx context.Context, memberID string, merchantName string, delta int, stampGoal int) (domain.StampUpdate, error) {
 	var update domain.StampUpdate
 
 	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -171,35 +177,16 @@ func (r StoreMemberRepository) UpdateStampProgressForMerchant(ctx context.Contex
 		}
 
 		previous := member.StampProgress
-		next := previous + delta
-		if next < 0 {
-			next = 0
-		}
-		if next > 10 {
-			next = 10
-		}
-
+		next, status := nextStampState(previous, delta, stampGoal, member.Status)
 		member.StampProgress = next
-		if next >= 10 {
-			member.Status = "reward_ready"
-		} else if member.Status == "reward_ready" {
-			member.Status = "active"
-		}
+		member.Status = status
 
 		if err := tx.Save(&member).Error; err != nil {
 			return fmt.Errorf("update store member stamp progress: %w", err)
 		}
 
 		update = domain.StampUpdate{
-			Member: domain.StoreMember{
-				MemberID:      member.MemberID,
-				CreationDate:  member.CreationDate,
-				CustomerName:  member.CustomerName,
-				CustomerEmail: member.CustomerEmail,
-				Merchant:      member.Merchant,
-				StampProgress: member.StampProgress,
-				Status:        member.Status,
-			},
+			Member:                storeMemberFromModel(member),
 			StampDelta:            delta,
 			PreviousStampProgress: previous,
 			NewStampProgress:      next,
@@ -211,4 +198,147 @@ func (r StoreMemberRepository) UpdateStampProgressForMerchant(ctx context.Contex
 	}
 
 	return update, nil
+}
+
+func (r StoreMemberRepository) ApplyRewardMutation(ctx context.Context, input domain.RewardMutationInput) (domain.RewardMutation, error) {
+	var result domain.RewardMutation
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var member storeMemberModel
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&member, "member_id = ?", input.MemberID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return domain.ErrStoreMemberNotFound
+			}
+			return fmt.Errorf("get store member for reward update: %w", err)
+		}
+		if member.Merchant != input.Merchant {
+			return domain.ErrStoreMemberForbidden
+		}
+
+		var existing memberRewardTransactionModel
+		err := tx.Where("merchant_id = ? AND idempotency_key = ?", input.MerchantID, input.IdempotencyKey).First(&existing).Error
+		if err == nil {
+			if existing.MemberID != input.MemberID || existing.TransactionType != input.TransactionType {
+				return domain.ErrIdempotencyKeyConflict
+			}
+			result = domain.RewardMutation{
+				Member:      storeMemberFromModel(member),
+				Transaction: rewardTransactionFromModel(existing),
+				Replayed:    true,
+			}
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("find reward transaction by idempotency key: %w", err)
+		}
+
+		previousRewards := member.AvailableRewards
+		previousStamps := member.StampProgress
+		if err := applyRewardState(&member, input.TransactionType, input.StampGoal); err != nil {
+			return err
+		}
+
+		if err := tx.Save(&member).Error; err != nil {
+			return fmt.Errorf("update member reward balance: %w", err)
+		}
+
+		transaction := memberRewardTransactionModel{
+			TransactionID:         input.TransactionID,
+			MemberID:              member.MemberID,
+			MerchantID:            input.MerchantID,
+			TransactionType:       input.TransactionType,
+			Quantity:              1,
+			PreviousRewardBalance: previousRewards,
+			NewRewardBalance:      member.AvailableRewards,
+			PreviousStampProgress: previousStamps,
+			NewStampProgress:      member.StampProgress,
+			IdempotencyKey:        input.IdempotencyKey,
+		}
+		if err := tx.Create(&transaction).Error; err != nil {
+			if isUniqueViolation(err) {
+				return domain.ErrIdempotencyKeyConflict
+			}
+			return fmt.Errorf("create member reward transaction: %w", err)
+		}
+
+		result = domain.RewardMutation{
+			Member:      storeMemberFromModel(member),
+			Transaction: rewardTransactionFromModel(transaction),
+		}
+		return nil
+	})
+	if err != nil {
+		return domain.RewardMutation{}, err
+	}
+	return result, nil
+}
+
+func storeMemberFromModel(member storeMemberModel) domain.StoreMember {
+	return domain.StoreMember{
+		MemberID:         member.MemberID,
+		CreationDate:     member.CreationDate,
+		CustomerName:     member.CustomerName,
+		CustomerEmail:    member.CustomerEmail,
+		Merchant:         member.Merchant,
+		StampProgress:    member.StampProgress,
+		AvailableRewards: member.AvailableRewards,
+		Status:           member.Status,
+	}
+}
+
+func rewardTransactionFromModel(transaction memberRewardTransactionModel) domain.MemberRewardTransaction {
+	return domain.MemberRewardTransaction{
+		TransactionID:         transaction.TransactionID,
+		MemberID:              transaction.MemberID,
+		MerchantID:            transaction.MerchantID,
+		TransactionType:       transaction.TransactionType,
+		Quantity:              transaction.Quantity,
+		PreviousRewardBalance: transaction.PreviousRewardBalance,
+		NewRewardBalance:      transaction.NewRewardBalance,
+		PreviousStampProgress: transaction.PreviousStampProgress,
+		NewStampProgress:      transaction.NewStampProgress,
+		CreationDate:          transaction.CreationDate,
+		IdempotencyKey:        transaction.IdempotencyKey,
+	}
+}
+
+func applyRewardState(member *storeMemberModel, transactionType string, stampGoal int) error {
+	if member.Status == "inactive" {
+		return domain.ErrMemberInactive
+	}
+	switch transactionType {
+	case "issue":
+		if member.StampProgress != stampGoal {
+			return domain.ErrRewardNotReady
+		}
+		member.StampProgress -= stampGoal
+		member.AvailableRewards++
+		member.Status = "active"
+	case "redeem":
+		if member.AvailableRewards < 1 {
+			return domain.ErrNoAvailableRewards
+		}
+		member.AvailableRewards--
+	default:
+		return fmt.Errorf("unsupported reward transaction type %q", transactionType)
+	}
+	return nil
+}
+
+func nextStampState(previous int, delta int, stampGoal int, currentStatus string) (int, string) {
+	next := previous + delta
+	if next < 0 {
+		next = 0
+	}
+	if next > stampGoal {
+		next = stampGoal
+	}
+
+	status := currentStatus
+	if next >= stampGoal {
+		status = "reward_ready"
+	} else if status == "reward_ready" {
+		status = "active"
+	}
+	return next, status
 }

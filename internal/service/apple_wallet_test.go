@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"native-ios-passkit-wip/internal/domain"
 )
 
 func TestValidateAppleCertificateAcceptsMatchingCredential(t *testing.T) {
@@ -98,28 +100,55 @@ func TestValidatePassDesignRequestAcceptsWalletInformation(t *testing.T) {
 	if err := validatePassDesignRequest(input); err != nil {
 		t.Fatalf("expected pass information to validate, got %v", err)
 	}
-	if input.StampInstructions == "" || input.RewardDetails == "" {
+	if input.StampInstructions == "" || input.RewardTitle != "Loyalty Reward" || input.RewardDetails == "" {
 		t.Fatal("expected information defaults to be populated")
 	}
 }
 
+func TestValidatePassDesignRequestRejectsLongRewardTitle(t *testing.T) {
+	input := validPassDesignRequest()
+	input.RewardTitle = "12345678901234567890123456789012345678901"
+	if err := validatePassDesignRequest(input); err == nil {
+		t.Fatal("expected reward title over 40 characters to fail validation")
+	}
+}
+
+func TestValidateStampGoalChangeLocksActiveDesign(t *testing.T) {
+	err := validateStampGoalChange(domain.ApplePassDesign{Status: "active", StampGoal: 10}, 12)
+	if err == nil {
+		t.Fatal("expected active design goal change to fail")
+	}
+}
+
+func TestValidateStampGoalChangeAllowsDraftDesign(t *testing.T) {
+	err := validateStampGoalChange(domain.ApplePassDesign{Status: "draft", StampGoal: 10}, 12)
+	if err != nil {
+		t.Fatalf("expected draft design goal change to succeed, got %v", err)
+	}
+}
+
 func TestValidatePassDesignRequestRejectsInsecureLink(t *testing.T) {
-	input := UpsertApplePassDesignRequest{
+	input := validPassDesignRequest()
+	input.Links = []ApplePassLinkRequest{
+		{LinkType: "website", Label: "Website", URL: "http://example.com"},
+	}
+	normalizePassDesignRequest(&input)
+	if err := validatePassDesignRequest(input); err == nil {
+		t.Fatal("expected non-HTTPS pass link to fail validation")
+	}
+}
+
+func validPassDesignRequest() UpsertApplePassDesignRequest {
+	return UpsertApplePassDesignRequest{
 		MerchantID:         "MCH-TEST1234",
 		PassTypeIdentifier: "pass.com.justloyalty.test",
 		ProgramName:        "Test Loyalty",
 		PassDescription:    "Collect stamps and enjoy rewards.",
 		StampGoal:          10,
+		RewardTitle:        "Free Coffee",
 		BackgroundColor:    "#5434F5",
 		ForegroundColor:    "#FFFFFF",
 		LabelColor:         "#E1DCFF",
-		Links: []ApplePassLinkRequest{
-			{LinkType: "website", Label: "Website", URL: "http://example.com"},
-		},
-	}
-	normalizePassDesignRequest(&input)
-	if err := validatePassDesignRequest(input); err == nil {
-		t.Fatal("expected non-HTTPS pass link to fail validation")
 	}
 }
 

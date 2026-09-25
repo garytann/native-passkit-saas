@@ -87,6 +87,7 @@ type UpsertApplePassDesignRequest struct {
 	LabelColor          string
 	AssetBundleRef      string
 	StampInstructions   string
+	RewardTitle         string
 	RewardDetails       string
 	SupportText         string
 	TermsText           string
@@ -325,6 +326,14 @@ func (s AppleWalletService) UpsertPassDesign(ctx context.Context, input UpsertAp
 	if err := validatePassDesignRequest(input); err != nil {
 		return domain.ApplePassDesign{}, err
 	}
+	existing, err := s.repo.GetPassDesign(ctx, input.MerchantID, input.PassTypeIdentifier)
+	if err == nil {
+		if err := validateStampGoalChange(existing, input.StampGoal); err != nil {
+			return domain.ApplePassDesign{}, err
+		}
+	} else if !errors.Is(err, domain.ErrApplePassDesignNotFound) {
+		return domain.ApplePassDesign{}, err
+	}
 	if input.AssetBundleRef != "" {
 		if s.assetBasePath == "" {
 			return domain.ApplePassDesign{}, ValidationError{Message: "apple pass asset base path is not configured"}
@@ -367,6 +376,7 @@ func (s AppleWalletService) UpsertPassDesign(ctx context.Context, input UpsertAp
 		LabelColor:          strings.ToUpper(input.LabelColor),
 		AssetBundleRef:      input.AssetBundleRef,
 		StampInstructions:   input.StampInstructions,
+		RewardTitle:         input.RewardTitle,
 		RewardDetails:       input.RewardDetails,
 		SupportText:         input.SupportText,
 		TermsText:           input.TermsText,
@@ -382,6 +392,30 @@ func (s AppleWalletService) ResolveActivePassDesign(ctx context.Context, applePa
 	return s.repo.ResolveActivePassDesign(ctx, strings.TrimSpace(applePassTypeID))
 }
 
+func (s AppleWalletService) StampGoalForMerchant(ctx context.Context, merchant string) (int, error) {
+	credential, err := s.ResolveActiveByMerchant(ctx, merchant)
+	if err != nil {
+		return 0, err
+	}
+	design, err := s.ResolveActivePassDesign(ctx, credential.ApplePassTypeID)
+	if err != nil {
+		return 0, err
+	}
+	return design.StampGoal, nil
+}
+
+func (s AppleWalletService) RewardTitleForMerchant(ctx context.Context, merchant string) (string, error) {
+	credential, err := s.ResolveActiveByMerchant(ctx, merchant)
+	if err != nil {
+		return "", err
+	}
+	design, err := s.ResolveActivePassDesign(ctx, credential.ApplePassTypeID)
+	if err != nil {
+		return "", err
+	}
+	return design.RewardTitle, nil
+}
+
 func normalizePassDesignRequest(input *UpsertApplePassDesignRequest) {
 	input.MerchantID = strings.TrimSpace(input.MerchantID)
 	input.PassTypeIdentifier = strings.TrimSpace(input.PassTypeIdentifier)
@@ -392,6 +426,7 @@ func normalizePassDesignRequest(input *UpsertApplePassDesignRequest) {
 	input.LabelColor = strings.TrimSpace(input.LabelColor)
 	input.AssetBundleRef = strings.TrimSpace(strings.ToLower(input.AssetBundleRef))
 	input.StampInstructions = strings.TrimSpace(input.StampInstructions)
+	input.RewardTitle = strings.TrimSpace(input.RewardTitle)
 	input.RewardDetails = strings.TrimSpace(input.RewardDetails)
 	input.SupportText = strings.TrimSpace(input.SupportText)
 	input.TermsText = strings.TrimSpace(input.TermsText)
@@ -413,6 +448,9 @@ func normalizePassDesignRequest(input *UpsertApplePassDesignRequest) {
 	}
 	if input.StampInstructions == "" {
 		input.StampInstructions = "Present this pass when making an eligible purchase to collect a stamp."
+	}
+	if input.RewardTitle == "" {
+		input.RewardTitle = "Loyalty Reward"
 	}
 	if input.RewardDetails == "" {
 		input.RewardDetails = "Complete your stamp card to receive the merchant reward."
@@ -452,6 +490,8 @@ func validatePassDesignRequest(input UpsertApplePassDesignRequest) error {
 		return ValidationError{Message: "asset_bundle_ref must contain lowercase letters, numbers, or hyphens"}
 	case len(input.StampInstructions) > 500:
 		return ValidationError{Message: "stamp_instructions must be 500 characters or fewer"}
+	case len(input.RewardTitle) > 40:
+		return ValidationError{Message: "reward_title must be 40 characters or fewer"}
 	case len(input.RewardDetails) > 500:
 		return ValidationError{Message: "reward_details must be 500 characters or fewer"}
 	case len(input.SupportText) > 500:
@@ -485,6 +525,13 @@ func validatePassDesignRequest(input UpsertApplePassDesignRequest) error {
 		if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
 			return ValidationError{Message: "pass links must use a valid HTTPS URL"}
 		}
+	}
+	return nil
+}
+
+func validateStampGoalChange(existing domain.ApplePassDesign, requestedGoal int) error {
+	if existing.Status == "active" && existing.StampGoal != requestedGoal {
+		return ValidationError{Message: "stamp_goal cannot be changed after pass activation"}
 	}
 	return nil
 }

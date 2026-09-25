@@ -17,6 +17,7 @@ type publishMerchantPassDesignRequest struct {
 	PassDescription   string                         `json:"pass_description"`
 	StampGoal         int                            `json:"stamp_goal"`
 	StampInstructions string                         `json:"stamp_instructions"`
+	RewardTitle       string                         `json:"reward_title"`
 	RewardDetails     string                         `json:"reward_details"`
 	SupportText       string                         `json:"support_text"`
 	TermsText         string                         `json:"terms_text"`
@@ -52,6 +53,7 @@ func (c MerchantPassDesignController) Routes(w http.ResponseWriter, r *http.Requ
 			PassDescription:   request.PassDescription,
 			StampGoal:         request.StampGoal,
 			StampInstructions: request.StampInstructions,
+			RewardTitle:       request.RewardTitle,
 			RewardDetails:     request.RewardDetails,
 			SupportText:       request.SupportText,
 			TermsText:         request.TermsText,
