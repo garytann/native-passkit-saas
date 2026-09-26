@@ -29,6 +29,7 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 		StampGoal:        10,
 		AvailableRewards: 2,
 		BarcodeID:        "stamp-card:MBR-12345",
+		PromotionTitle:   "Friday Treat",
 		Promotion:        "Free pastry this Friday",
 	})
 
@@ -53,8 +54,8 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 	if got := pass.StoreCard.PrimaryFields[0].Value; got != "Coffee Brew Loyalty Program" {
 		t.Fatalf("expected program name, got %v", got)
 	}
-	if got := pass.StoreCard.PrimaryFields[0].Label; got != "Member Rewards" {
-		t.Fatalf("expected member rewards label, got %q", got)
+	if got := pass.StoreCard.PrimaryFields[0].Label; got != "" {
+		t.Fatalf("expected primary label to be omitted, got %q", got)
 	}
 	if len(pass.StoreCard.SecondaryFields) != 1 {
 		t.Fatalf("expected one next reward field, got %d", len(pass.StoreCard.SecondaryFields))
@@ -103,13 +104,62 @@ func TestNewStampCardPassCanSuppressCampaignDetails(t *testing.T) {
 	pass := NewStampCardPass(TemplateConfig{}, StampCardDesign{
 		CampaignDisplayMode: "none",
 	}, StampCardMember{
-		ID:        "MBR-12345",
-		BarcodeID: "stamp-card:MBR-12345",
-		Promotion: "Hidden campaign",
+		ID:             "MBR-12345",
+		BarcodeID:      "stamp-card:MBR-12345",
+		PromotionTitle: "Hidden campaign title",
+		Promotion:      "Hidden campaign",
 	})
 
 	if _, ok := fieldByKey(pass.StoreCard.BackFields, "latest_offer"); ok {
 		t.Fatal("expected campaign details to be suppressed")
+	}
+	if _, ok := fieldByKey(pass.StoreCard.AuxiliaryFields, "latest_offer_title"); ok {
+		t.Fatal("expected campaign front field to be suppressed")
+	}
+}
+
+func TestNewStampCardPassShowsCampaignTitleOnFrontAndMessageInDetails(t *testing.T) {
+	longTitle := "Coffee 优惠 promotion with a title that exceeds forty characters"
+	pass := NewStampCardPass(TemplateConfig{}, StampCardDesign{
+		CampaignDisplayMode: "front_and_details",
+	}, StampCardMember{
+		ID:             "MBR-12345",
+		BarcodeID:      "stamp-card:MBR-12345",
+		PromotionTitle: longTitle,
+		Promotion:      "Receive a free pastry with your next coffee this Friday.",
+	})
+
+	frontOffer, ok := fieldByKey(pass.StoreCard.AuxiliaryFields, "latest_offer_title")
+	if !ok {
+		t.Fatal("expected latest campaign title in auxiliary fields")
+	}
+	frontValue, ok := frontOffer.Value.(string)
+	if !ok || len([]rune(frontValue)) != 40 || frontValue[len(frontValue)-3:] != "..." {
+		t.Fatalf("expected a rune-safe 40-character title, got %q", frontValue)
+	}
+	if frontOffer.ChangeMessage != "" {
+		t.Fatalf("expected no duplicate change message on auxiliary field, got %q", frontOffer.ChangeMessage)
+	}
+
+	backOffer, ok := fieldByKey(pass.StoreCard.BackFields, "latest_offer")
+	if !ok || backOffer.Value != "Receive a free pastry with your next coffee this Friday." {
+		t.Fatalf("expected full campaign message in pass details, got %+v", backOffer)
+	}
+	if backOffer.ChangeMessage != "New offer: %@" {
+		t.Fatalf("expected notification copy only on pass details field, got %q", backOffer.ChangeMessage)
+	}
+}
+
+func TestNewStampCardPassOmitsEmptyCampaign(t *testing.T) {
+	pass := NewStampCardPass(TemplateConfig{}, StampCardDesign{
+		CampaignDisplayMode: "front_and_details",
+	}, StampCardMember{ID: "MBR-12345", BarcodeID: "stamp-card:MBR-12345"})
+
+	if _, ok := fieldByKey(pass.StoreCard.AuxiliaryFields, "latest_offer_title"); ok {
+		t.Fatal("expected empty campaign title to be omitted")
+	}
+	if _, ok := fieldByKey(pass.StoreCard.BackFields, "latest_offer"); ok {
+		t.Fatal("expected empty campaign message to be omitted")
 	}
 }
 

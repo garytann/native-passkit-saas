@@ -178,6 +178,7 @@ func (s PassService) StampCardMember(ctx context.Context, memberID string) (appl
 		if err != nil {
 			return applepass.StampCardMember{}, fmt.Errorf("load active campaign: %w", err)
 		}
+		stampCardMember.PromotionTitle = campaign.Title
 		stampCardMember.Promotion = campaign.Message
 	}
 

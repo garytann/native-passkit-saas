@@ -850,10 +850,13 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
       font-size: 30px;
       font-weight: 750;
     }
-    .secondary {
+    .supporting-fields {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 18px;
       padding: 0 24px 22px;
     }
-    .secondary .value {
+    .supporting-fields .value {
       font-size: 18px;
       font-weight: 700;
     }
@@ -936,12 +939,20 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
         <div class="value">{{.Value}}</div>
       </div>
       {{end}}
-      {{with index .Pass.StoreCard.SecondaryFields 0}}
-      <div class="secondary">
-        <div class="label">{{.Label}}</div>
-        <div class="value">{{.Value}}</div>
+      <div class="supporting-fields">
+        {{with index .Pass.StoreCard.SecondaryFields 0}}
+        <div class="secondary">
+          <div class="label">{{.Label}}</div>
+          <div class="value">{{.Value}}</div>
+        </div>
+        {{end}}
+        {{range .Pass.StoreCard.AuxiliaryFields}}
+        <div class="auxiliary">
+          <div class="label">{{.Label}}</div>
+          <div class="value">{{.Value}}</div>
+        </div>
+        {{end}}
       </div>
-      {{end}}
       <div class="barcode">
         <img class="qr" src="{{.QRCodeURL}}" alt="QR code for {{.Barcode.AltText}}">
         <div class="alt">{{.Barcode.AltText}}</div>

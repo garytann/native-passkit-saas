@@ -29,16 +29,17 @@ type MerchantPassDesignResult struct {
 }
 
 type PublishMerchantPassDesignRequest struct {
-	MerchantID        string
-	ProgramName       string
-	PassDescription   string
-	StampGoal         int
-	StampInstructions string
-	RewardTitle       string
-	RewardDetails     string
-	SupportText       string
-	TermsText         string
-	Links             []ApplePassLinkRequest
+	MerchantID          string
+	ProgramName         string
+	PassDescription     string
+	StampGoal           int
+	StampInstructions   string
+	RewardTitle         string
+	RewardDetails       string
+	SupportText         string
+	TermsText           string
+	Links               []ApplePassLinkRequest
+	CampaignDisplayMode string
 }
 
 type PublishMerchantPassDesignResult struct {
@@ -85,6 +86,7 @@ func (s MerchantPassDesignService) Publish(ctx context.Context, input PublishMer
 	if err != nil {
 		return PublishMerchantPassDesignResult{}, err
 	}
+	campaignDisplayMode := campaignDisplayModeForPublish(input.CampaignDisplayMode, current.Design.CampaignDisplayMode)
 	design, err := s.wallet.UpsertPassDesign(ctx, UpsertApplePassDesignRequest{
 		MerchantID:          input.MerchantID,
 		PassTypeIdentifier:  current.PassTypeIdentifier,
@@ -101,7 +103,7 @@ func (s MerchantPassDesignService) Publish(ctx context.Context, input PublishMer
 		SupportText:         input.SupportText,
 		TermsText:           input.TermsText,
 		Links:               input.Links,
-		CampaignDisplayMode: current.Design.CampaignDisplayMode,
+		CampaignDisplayMode: campaignDisplayMode,
 	})
 	if err != nil {
 		return PublishMerchantPassDesignResult{}, err
@@ -145,4 +147,12 @@ func (s MerchantPassDesignService) Publish(ctx context.Context, input PublishMer
 		result.LastError = ""
 	}
 	return result, nil
+}
+
+func campaignDisplayModeForPublish(requested string, current string) string {
+	requested = strings.ToLower(strings.TrimSpace(requested))
+	if requested == "" {
+		return current
+	}
+	return requested
 }

@@ -113,6 +113,22 @@ func TestValidatePassDesignRequestRejectsLongRewardTitle(t *testing.T) {
 	}
 }
 
+func TestValidatePassDesignRequestAcceptsFrontCampaignMode(t *testing.T) {
+	input := validPassDesignRequest()
+	input.CampaignDisplayMode = "front_and_details"
+	if err := validatePassDesignRequest(input); err != nil {
+		t.Fatalf("expected front campaign mode to validate, got %v", err)
+	}
+}
+
+func TestValidatePassDesignRequestRejectsUnknownCampaignMode(t *testing.T) {
+	input := validPassDesignRequest()
+	input.CampaignDisplayMode = "front_only"
+	if err := validatePassDesignRequest(input); err == nil {
+		t.Fatal("expected unknown campaign mode to fail validation")
+	}
+}
+
 func TestValidateStampGoalChangeLocksActiveDesign(t *testing.T) {
 	err := validateStampGoalChange(domain.ApplePassDesign{Status: "active", StampGoal: 10}, 12)
 	if err == nil {

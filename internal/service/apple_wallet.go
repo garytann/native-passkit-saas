@@ -498,8 +498,8 @@ func validatePassDesignRequest(input UpsertApplePassDesignRequest) error {
 		return ValidationError{Message: "support_text must be 500 characters or fewer"}
 	case len(input.TermsText) > 5000:
 		return ValidationError{Message: "terms_text must be 5000 characters or fewer"}
-	case input.CampaignDisplayMode != "none" && input.CampaignDisplayMode != "details":
-		return ValidationError{Message: "campaign_display_mode must be none or details"}
+	case input.CampaignDisplayMode != "none" && input.CampaignDisplayMode != "details" && input.CampaignDisplayMode != "front_and_details":
+		return ValidationError{Message: "campaign_display_mode must be none, details, or front_and_details"}
 	}
 	if len(input.Links) > 5 {
 		return ValidationError{Message: "no more than 5 pass links are allowed"}

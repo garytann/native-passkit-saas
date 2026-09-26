@@ -42,7 +42,7 @@ type PassStructure struct {
 
 type Field struct {
 	Key           string `json:"key"`
-	Label         string `json:"label"`
+	Label         string `json:"label,omitempty"`
 	Value         any    `json:"value"`
 	ChangeMessage string `json:"changeMessage,omitempty"`
 }
@@ -56,6 +56,7 @@ type StampCardMember struct {
 	StampGoal        int
 	AvailableRewards int
 	BarcodeID        string
+	PromotionTitle   string
 	Promotion        string
 }
 
@@ -101,7 +102,8 @@ func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCa
 	backFields := []Field{
 		{Key: "about", Label: "About This Programme", Value: design.PassDescription},
 	}
-	if design.CampaignDisplayMode == "details" && member.Promotion != "" {
+	hasCampaign := member.PromotionTitle != "" && member.Promotion != ""
+	if hasCampaign && campaignAppearsInDetails(design.CampaignDisplayMode) {
 		backFields = append(backFields, Field{
 			Key:           "latest_offer",
 			Label:         "Latest Promotion",
@@ -122,8 +124,18 @@ func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCa
 	backFields = append(backFields,
 		Field{Key: "support", Label: "Questions? Contact the Merchant", Value: design.SupportText},
 		Field{Key: "terms", Label: "Terms and Conditions", Value: design.TermsText},
-		Field{Key: "powered_by", Label: "Powered by Just Loyalty", Value: "https://www.just-loyalty.com"},
+		Field{Key: "powered_by", Label: "Powered by Just Loyalty", Value: "https://just-loyalty.com"},
 	)
+	var auxiliaryFields []Field
+	if hasCampaign && design.CampaignDisplayMode == "front_and_details" {
+		auxiliaryFields = []Field{
+			{
+				Key:   "latest_offer_title",
+				Label: "Latest Promotion",
+				Value: compactCampaignTitle(member.PromotionTitle),
+			},
+		}
+	}
 	pass := Pass{
 		FormatVersion:      1,
 		PassTypeIdentifier: cfg.PassTypeID,
@@ -146,7 +158,7 @@ func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCa
 				},
 			},
 			PrimaryFields: []Field{
-				{Key: "loyalty_program", Label: "Member Rewards", Value: design.ProgramName},
+				{Key: "loyalty_program", Value: design.ProgramName},
 			},
 			SecondaryFields: []Field{
 				{
@@ -156,7 +168,8 @@ func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCa
 					ChangeMessage: "Your next reward is now %@.",
 				},
 			},
-			BackFields: backFields,
+			AuxiliaryFields: auxiliaryFields,
+			BackFields:      backFields,
 		},
 		UserInfo: map[string]string{
 			"memberID":         member.ID,
@@ -166,8 +179,11 @@ func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCa
 		},
 	}
 
-	if design.CampaignDisplayMode == "details" && member.Promotion != "" {
+	if hasCampaign && campaignAppearsInDetails(design.CampaignDisplayMode) {
 		pass.UserInfo["promotion"] = member.Promotion
+	}
+	if hasCampaign && design.CampaignDisplayMode == "front_and_details" {
+		pass.UserInfo["promotionTitle"] = compactCampaignTitle(member.PromotionTitle)
 	}
 
 	if cfg.WebServiceURL != "" && cfg.AuthenticationToken != "" {
@@ -176,6 +192,19 @@ func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCa
 	}
 
 	return pass
+}
+
+func campaignAppearsInDetails(mode string) bool {
+	return mode == "details" || mode == "front_and_details"
+}
+
+func compactCampaignTitle(value string) string {
+	const maxRunes = 40
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	return string(runes[:maxRunes-3]) + "..."
 }
 
 func normalizeStampCardDesign(design StampCardDesign, member StampCardMember) StampCardDesign {

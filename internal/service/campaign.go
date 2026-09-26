@@ -77,6 +77,9 @@ func (s CampaignService) CreateForMerchant(ctx context.Context, input CreateCamp
 	if input.Title == "" {
 		return CreateCampaignResult{}, ValidationError{Message: "campaign title is required"}
 	}
+	if len([]rune(input.Title)) > 40 {
+		return CreateCampaignResult{}, ValidationError{Message: "campaign title must be 40 characters or fewer"}
+	}
 	if input.Message == "" {
 		return CreateCampaignResult{}, ValidationError{Message: "campaign message is required"}
 	}
