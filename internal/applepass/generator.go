@@ -26,6 +26,7 @@ type Generator struct {
 	WWDRCertPath    string
 	OpenSSLBin      string
 	AssetBundlePath string
+	DynamicAssets   map[string][]byte
 }
 
 func (g Generator) Create(pass Pass) ([]byte, error) {
@@ -39,7 +40,7 @@ func (g Generator) Create(pass Pass) ([]byte, error) {
 	}
 	defer os.RemoveAll(workDir)
 
-	if err := writePassFiles(workDir, pass, g.AssetBundlePath); err != nil {
+	if err := writePassFiles(workDir, pass, g.AssetBundlePath, g.DynamicAssets); err != nil {
 		return nil, err
 	}
 
@@ -91,26 +92,36 @@ func (g Generator) validate() error {
 	return nil
 }
 
-func writePassFiles(dir string, pass Pass, assetBundlePath string) error {
+func writePassFiles(dir string, pass Pass, assetBundlePath string, dynamicAssets map[string][]byte) error {
 	if err := writeJSON(filepath.Join(dir, "pass.json"), pass); err != nil {
 		return err
 	}
 	if assetBundlePath != "" {
-		return copyPassAssets(dir, assetBundlePath)
-	}
-
-	assets := map[string]imageSpec{
-		"icon.png":    {29, 29, color.RGBA{84, 52, 245, 255}},
-		"icon@2x.png": {58, 58, color.RGBA{84, 52, 245, 255}},
-		"icon@3x.png": {87, 87, color.RGBA{84, 52, 245, 255}},
-		"logo.png":    {160, 50, color.RGBA{255, 255, 255, 255}},
-		"logo@2x.png": {320, 100, color.RGBA{255, 255, 255, 255}},
-		"logo@3x.png": {480, 150, color.RGBA{255, 255, 255, 255}},
-	}
-
-	for name, spec := range assets {
-		if err := writeSolidPNG(filepath.Join(dir, name), spec); err != nil {
+		if err := copyPassAssets(dir, assetBundlePath); err != nil {
 			return err
+		}
+	} else {
+		assets := map[string]imageSpec{
+			"icon.png":    {29, 29, color.RGBA{84, 52, 245, 255}},
+			"icon@2x.png": {58, 58, color.RGBA{84, 52, 245, 255}},
+			"icon@3x.png": {87, 87, color.RGBA{84, 52, 245, 255}},
+			"logo.png":    {160, 50, color.RGBA{255, 255, 255, 255}},
+			"logo@2x.png": {320, 100, color.RGBA{255, 255, 255, 255}},
+			"logo@3x.png": {480, 150, color.RGBA{255, 255, 255, 255}},
+		}
+
+		for name, spec := range assets {
+			if err := writeSolidPNG(filepath.Join(dir, name), spec); err != nil {
+				return err
+			}
+		}
+	}
+	for name, data := range dynamicAssets {
+		if name != "strip.png" && name != "strip@2x.png" && name != "strip@3x.png" {
+			return fmt.Errorf("unsupported dynamic pass asset %s", name)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0644); err != nil {
+			return fmt.Errorf("write dynamic pass asset %s: %w", name, err)
 		}
 	}
 

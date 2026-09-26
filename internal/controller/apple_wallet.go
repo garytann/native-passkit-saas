@@ -3,6 +3,7 @@ package controller
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -61,6 +62,7 @@ type upsertApplePassDesignRequest struct {
 	TermsText           string                         `json:"terms_text"`
 	Links               []service.ApplePassLinkRequest `json:"links"`
 	CampaignDisplayMode string                         `json:"campaign_display_mode"`
+	StampIconKey        string                         `json:"stamp_icon_key"`
 }
 
 type updatePaymentStatusRequest struct {
@@ -259,21 +261,51 @@ func (c AppleWalletAdminController) uploadPassAssets(w http.ResponseWriter, r *h
 		writeServiceError(w, err)
 		return
 	}
-	assets := make(map[string][]byte, 6)
+	assets := make(map[string][]byte, 7)
+	standardAssetCount := 0
 	for _, name := range []string{"icon.png", "icon@2x.png", "icon@3x.png", "logo.png", "logo@2x.png", "logo@3x.png"} {
-		data, err := multipartFile(r, name, 4<<20)
+		data, ok, err := optionalMultipartFile(r, name, 4<<20)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		assets[name] = data
+		if ok {
+			assets[name] = data
+			standardAssetCount++
+		}
 	}
-	alias, err := service.NewAppleStorageAlias(status.Merchant.MerchantSlug)
-	if err != nil {
-		writeServiceError(w, err)
+	stampIconUploaded := false
+	if data, ok, err := optionalMultipartFile(r, "stamp.png", 1<<20); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	} else if ok {
+		assets["stamp.png"] = data
+		stampIconUploaded = true
+	}
+	if standardAssetCount != 0 && standardAssetCount != 6 {
+		writeError(w, http.StatusBadRequest, "upload all six standard pass assets together")
 		return
 	}
-	if err := c.wallet.StorePassAssets(alias, assets); err != nil {
+	alias := ""
+	if status.Design != nil {
+		alias = status.Design.AssetBundleRef
+	}
+	if alias == "" {
+		alias, err = service.NewAppleStorageAlias(status.Merchant.MerchantSlug)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+	}
+	if standardAssetCount == 6 {
+		err = c.wallet.StorePassAssets(alias, assets)
+	} else if stampIconUploaded {
+		err = c.wallet.StoreCustomStampIcon(alias, assets["stamp.png"])
+	} else {
+		writeError(w, http.StatusBadRequest, "pass assets are required")
+		return
+	}
+	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
@@ -326,6 +358,7 @@ func (c AppleWalletAdminController) upsertPassDesign(w http.ResponseWriter, r *h
 		TermsText:           request.TermsText,
 		Links:               request.Links,
 		CampaignDisplayMode: request.CampaignDisplayMode,
+		StampIconKey:        request.StampIconKey,
 	})
 	if err != nil {
 		writeServiceError(w, err)
@@ -379,4 +412,23 @@ func multipartFile(r *http.Request, field string, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("%s exceeds the upload limit", field)
 	}
 	return data, nil
+}
+
+func optionalMultipartFile(r *http.Request, field string, limit int64) ([]byte, bool, error) {
+	file, _, err := r.FormFile(field)
+	if errors.Is(err, http.ErrMissingFile) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("read %s: %w", field, err)
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return nil, false, fmt.Errorf("read %s: %w", field, err)
+	}
+	if int64(len(data)) > limit {
+		return nil, false, fmt.Errorf("%s exceeds the upload limit", field)
+	}
+	return data, true, nil
 }

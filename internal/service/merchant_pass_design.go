@@ -40,6 +40,7 @@ type PublishMerchantPassDesignRequest struct {
 	TermsText           string
 	Links               []ApplePassLinkRequest
 	CampaignDisplayMode string
+	StampIconKey        string
 }
 
 type PublishMerchantPassDesignResult struct {
@@ -50,6 +51,12 @@ type PublishMerchantPassDesignResult struct {
 	PushSentCount       int                    `json:"push_sent_count"`
 	PushFailedCount     int                    `json:"push_failed_count"`
 	LastError           string                 `json:"last_error,omitempty"`
+}
+
+type PublishMerchantStampIconRequest struct {
+	MerchantID string
+	IconKey    string
+	IconPNG    []byte
 }
 
 func NewMerchantPassDesignService(wallet AppleWalletService, walletPasses PassDesignWalletPassRepository, walletRegistrations PassDesignWalletRegistrationRepository, pushSender PassUpdateSender) MerchantPassDesignService {
@@ -87,6 +94,7 @@ func (s MerchantPassDesignService) Publish(ctx context.Context, input PublishMer
 		return PublishMerchantPassDesignResult{}, err
 	}
 	campaignDisplayMode := campaignDisplayModeForPublish(input.CampaignDisplayMode, current.Design.CampaignDisplayMode)
+	stampIconKey := stampIconKeyForPublish(input.StampIconKey, current.Design.StampIconKey)
 	design, err := s.wallet.UpsertPassDesign(ctx, UpsertApplePassDesignRequest{
 		MerchantID:          input.MerchantID,
 		PassTypeIdentifier:  current.PassTypeIdentifier,
@@ -104,6 +112,7 @@ func (s MerchantPassDesignService) Publish(ctx context.Context, input PublishMer
 		TermsText:           input.TermsText,
 		Links:               input.Links,
 		CampaignDisplayMode: campaignDisplayMode,
+		StampIconKey:        stampIconKey,
 	})
 	if err != nil {
 		return PublishMerchantPassDesignResult{}, err
@@ -149,7 +158,61 @@ func (s MerchantPassDesignService) Publish(ctx context.Context, input PublishMer
 	return result, nil
 }
 
+func (s MerchantPassDesignService) PublishStampIcon(ctx context.Context, input PublishMerchantStampIconRequest) (PublishMerchantPassDesignResult, error) {
+	input.MerchantID = strings.TrimSpace(input.MerchantID)
+	input.IconKey = strings.ToLower(strings.TrimSpace(input.IconKey))
+	if input.MerchantID == "" {
+		return PublishMerchantPassDesignResult{}, ValidationError{Message: "merchant id is required"}
+	}
+	if !validStampIconKey(input.IconKey) {
+		return PublishMerchantPassDesignResult{}, ValidationError{Message: "stamp_icon_key must be none, logo, coffee, star, gift, heart, shopping_bag, or custom"}
+	}
+	current, err := s.Design(ctx, input.MerchantID)
+	if err != nil {
+		return PublishMerchantPassDesignResult{}, err
+	}
+	if input.IconKey == "custom" {
+		if err := s.wallet.StoreCustomStampIcon(current.Design.AssetBundleRef, input.IconPNG); err != nil {
+			return PublishMerchantPassDesignResult{}, err
+		}
+	}
+	links := make([]ApplePassLinkRequest, 0, len(current.Design.Links))
+	for _, link := range current.Design.Links {
+		links = append(links, ApplePassLinkRequest{LinkType: link.LinkType, Label: link.Label, URL: link.URL})
+	}
+	return s.Publish(ctx, PublishMerchantPassDesignRequest{
+		MerchantID:          input.MerchantID,
+		ProgramName:         current.Design.ProgramName,
+		PassDescription:     current.Design.PassDescription,
+		StampGoal:           current.Design.StampGoal,
+		StampInstructions:   current.Design.StampInstructions,
+		RewardTitle:         current.Design.RewardTitle,
+		RewardDetails:       current.Design.RewardDetails,
+		SupportText:         current.Design.SupportText,
+		TermsText:           current.Design.TermsText,
+		Links:               links,
+		CampaignDisplayMode: current.Design.CampaignDisplayMode,
+		StampIconKey:        input.IconKey,
+	})
+}
+
+func (s MerchantPassDesignService) StampArtwork(ctx context.Context, merchantID string, source string) ([]byte, error) {
+	current, err := s.Design(ctx, merchantID)
+	if err != nil {
+		return nil, err
+	}
+	return s.wallet.StampArtwork(current.Design.AssetBundleRef, source)
+}
+
 func campaignDisplayModeForPublish(requested string, current string) string {
+	requested = strings.ToLower(strings.TrimSpace(requested))
+	if requested == "" {
+		return current
+	}
+	return requested
+}
+
+func stampIconKeyForPublish(requested string, current string) string {
 	requested = strings.ToLower(strings.TrimSpace(requested))
 	if requested == "" {
 		return current

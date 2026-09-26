@@ -74,6 +74,7 @@ type applePassDesignModel struct {
 	SupportText         string    `gorm:"column:support_text;not null"`
 	TermsText           string    `gorm:"column:terms_text;not null"`
 	CampaignDisplayMode string    `gorm:"column:campaign_display_mode;not null"`
+	StampIconKey        string    `gorm:"column:stamp_icon_key;not null"`
 	Status              string    `gorm:"column:status;not null"`
 	Version             int       `gorm:"column:version;not null"`
 	CreatedAt           time.Time `gorm:"column:created_at;default:now()"`
@@ -306,6 +307,7 @@ func (r AppleWalletRepository) UpsertPassDesign(ctx context.Context, input domai
 			SupportText:         input.SupportText,
 			TermsText:           input.TermsText,
 			CampaignDisplayMode: input.CampaignDisplayMode,
+			StampIconKey:        input.StampIconKey,
 			Status:              designStatus,
 			Version:             1,
 			UpdatedAt:           now,
@@ -324,6 +326,7 @@ func (r AppleWalletRepository) UpsertPassDesign(ctx context.Context, input domai
 			"support_text":          input.SupportText,
 			"terms_text":            input.TermsText,
 			"campaign_display_mode": input.CampaignDisplayMode,
+			"stamp_icon_key":        input.StampIconKey,
 			"status":                designStatus,
 			"version":               gorm.Expr("apple_pass_designs.version + 1"),
 			"updated_at":            now,
@@ -588,6 +591,7 @@ func applePassDesignFromModel(model applePassDesignModel) domain.ApplePassDesign
 		SupportText:         model.SupportText,
 		TermsText:           model.TermsText,
 		CampaignDisplayMode: model.CampaignDisplayMode,
+		StampIconKey:        model.StampIconKey,
 		Status:              model.Status,
 		Version:             model.Version,
 		CreatedAt:           model.CreatedAt,

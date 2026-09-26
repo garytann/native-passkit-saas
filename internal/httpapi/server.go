@@ -101,6 +101,7 @@ func (s Server) Routes() http.Handler {
 	v1.HandleFunc("/merchants/register", method(http.MethodPost, merchantController.RegisterMerchant))
 	v1.HandleFunc("/merchants/login", method(http.MethodPost, merchantController.LoginMerchant))
 	v1.HandleFunc("/merchants/me/apple-wallet/pass-design", merchantPassDesignController.Routes)
+	v1.HandleFunc("/merchants/me/apple-wallet/stamp-icon", merchantPassDesignController.StampIcon)
 	v1.HandleFunc("/admin/auth/login", method(http.MethodPost, adminAuthController.Login))
 	v1.HandleFunc("/admin/merchants", method(http.MethodGet, appleWalletAdminController.ListMerchants))
 	v1.HandleFunc("/admin/merchants/", appleWalletAdminController.Routes)

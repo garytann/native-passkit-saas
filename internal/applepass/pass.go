@@ -17,6 +17,7 @@ type Pass struct {
 	BackgroundColor     string            `json:"backgroundColor,omitempty"`
 	LabelColor          string            `json:"labelColor,omitempty"`
 	SharingProhibited   bool              `json:"sharingProhibited,omitempty"`
+	SuppressStripShine  bool              `json:"suppressStripShine,omitempty"`
 	AuthenticationToken string            `json:"authenticationToken,omitempty"`
 	WebServiceURL       string            `json:"webServiceURL,omitempty"`
 	Barcodes            []Barcode         `json:"barcodes,omitempty"`
@@ -82,6 +83,7 @@ type StampCardDesign struct {
 	TermsText           string
 	Links               []StampCardLink
 	CampaignDisplayMode string
+	StampIconKey        string
 }
 
 type StampCardLink struct {
@@ -143,6 +145,7 @@ func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCa
 		TeamIdentifier:     cfg.TeamID,
 		OrganizationName:   cfg.OrganizationName,
 		Description:        design.PassDescription,
+		SuppressStripShine: design.StampIconKey != "none" && design.StampGoal <= maxVisualStamps,
 		ForegroundColor:    walletColor(design.ForegroundColor),
 		BackgroundColor:    walletColor(design.BackgroundColor),
 		LabelColor:         walletColor(design.LabelColor),

@@ -224,6 +224,18 @@ func TestMerchantPassDesignRequiresMerchantToken(t *testing.T) {
 	}
 }
 
+func TestMerchantStampIconRequiresMerchantToken(t *testing.T) {
+	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080"}, nil, nil)
+	routes := server.Routes()
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/merchants/me/apple-wallet/stamp-icon", nil)
+	routes.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected merchant stamp icon route to require auth token, got %d", response.Code)
+	}
+}
+
 func TestMerchantPassDesignUsesAuthenticatedMerchant(t *testing.T) {
 	const secret = "merchant-pass-design-test-secret"
 	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080", AuthTokenSecret: secret}, nil, nil)

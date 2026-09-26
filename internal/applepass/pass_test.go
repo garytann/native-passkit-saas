@@ -21,6 +21,7 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 			{Key: "instagram", Label: "Instagram", URL: "https://instagram.com/coffeebrew"},
 		},
 		CampaignDisplayMode: "details",
+		StampIconKey:        "coffee",
 	}, StampCardMember{
 		ID:               "MBR-12345",
 		FullName:         "Gary Tan",
@@ -44,6 +45,9 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 	}
 	if pass.StoreCard == nil {
 		t.Fatal("expected storeCard payload")
+	}
+	if pass.SuppressStripShine {
+		t.Fatal("expected goals above ten to retain the numeric-only fallback")
 	}
 	if got := pass.StoreCard.HeaderFields[0].Value; got != "6 / 12" {
 		t.Fatalf("expected design stamp goal in header, got %v", got)
@@ -97,6 +101,13 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 	}
 	if _, ok := fieldByKey(pass.StoreCard.BackFields, "member"); ok {
 		t.Fatal("expected member name to be omitted from pass fields")
+	}
+}
+
+func TestNewStampCardPassSuppressesShineForVisualStampStrip(t *testing.T) {
+	pass := NewStampCardPass(TemplateConfig{}, StampCardDesign{StampGoal: 10, StampIconKey: "coffee"}, StampCardMember{ID: "MBR-12345"})
+	if !pass.SuppressStripShine {
+		t.Fatal("expected generated stamp strip shine to be suppressed")
 	}
 }
 

@@ -13,3 +13,15 @@ func TestCampaignDisplayModeForPublishNormalizesRequestedMode(t *testing.T) {
 		t.Fatalf("expected requested mode to be normalized, got %q", got)
 	}
 }
+
+func TestStampIconKeyForPublishPreservesCurrentWhenOmitted(t *testing.T) {
+	if got := stampIconKeyForPublish("", "coffee"); got != "coffee" {
+		t.Fatalf("expected omitted icon to preserve current value, got %q", got)
+	}
+}
+
+func TestStampIconKeyForPublishNormalizesRequestedValue(t *testing.T) {
+	if got := stampIconKeyForPublish(" SHOPPING_BAG ", "none"); got != "shopping_bag" {
+		t.Fatalf("expected requested icon to be normalized, got %q", got)
+	}
+}

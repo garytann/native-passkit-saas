@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/ecdsa"
@@ -14,7 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	_ "image/png"
+	"image/png"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -93,6 +94,7 @@ type UpsertApplePassDesignRequest struct {
 	TermsText           string
 	Links               []ApplePassLinkRequest
 	CampaignDisplayMode string
+	StampIconKey        string
 }
 
 type ApplePassLinkRequest struct {
@@ -341,6 +343,11 @@ func (s AppleWalletService) UpsertPassDesign(ctx context.Context, input UpsertAp
 		if err := validatePassAssetBundle(filepath.Join(s.assetBasePath, input.AssetBundleRef)); err != nil {
 			return domain.ApplePassDesign{}, ValidationError{Message: err.Error()}
 		}
+		if input.StampIconKey == "custom" {
+			if err := validateStoredStampIcon(filepath.Join(s.assetBasePath, input.AssetBundleRef, "stamp.png")); err != nil {
+				return domain.ApplePassDesign{}, ValidationError{Message: err.Error()}
+			}
+		}
 	}
 
 	designID, err := domain.NewApplePassDesignID()
@@ -382,6 +389,7 @@ func (s AppleWalletService) UpsertPassDesign(ctx context.Context, input UpsertAp
 		TermsText:           input.TermsText,
 		Links:               links,
 		CampaignDisplayMode: input.CampaignDisplayMode,
+		StampIconKey:        input.StampIconKey,
 	})
 }
 
@@ -431,6 +439,7 @@ func normalizePassDesignRequest(input *UpsertApplePassDesignRequest) {
 	input.SupportText = strings.TrimSpace(input.SupportText)
 	input.TermsText = strings.TrimSpace(input.TermsText)
 	input.CampaignDisplayMode = strings.TrimSpace(strings.ToLower(input.CampaignDisplayMode))
+	input.StampIconKey = strings.TrimSpace(strings.ToLower(input.StampIconKey))
 	if input.StampGoal == 0 {
 		input.StampGoal = 10
 	}
@@ -460,6 +469,9 @@ func normalizePassDesignRequest(input *UpsertApplePassDesignRequest) {
 	}
 	if input.CampaignDisplayMode == "" {
 		input.CampaignDisplayMode = "details"
+	}
+	if input.StampIconKey == "" {
+		input.StampIconKey = "logo"
 	}
 	for index := range input.Links {
 		input.Links[index].LinkType = strings.ToLower(strings.TrimSpace(input.Links[index].LinkType))
@@ -500,6 +512,8 @@ func validatePassDesignRequest(input UpsertApplePassDesignRequest) error {
 		return ValidationError{Message: "terms_text must be 5000 characters or fewer"}
 	case input.CampaignDisplayMode != "none" && input.CampaignDisplayMode != "details" && input.CampaignDisplayMode != "front_and_details":
 		return ValidationError{Message: "campaign_display_mode must be none, details, or front_and_details"}
+	case !validStampIconKey(input.StampIconKey):
+		return ValidationError{Message: "stamp_icon_key must be none, logo, coffee, star, gift, heart, shopping_bag, or custom"}
 	}
 	if len(input.Links) > 5 {
 		return ValidationError{Message: "no more than 5 pass links are allowed"}
@@ -656,8 +670,71 @@ func (s AppleWalletService) StorePassAssets(alias string, assets map[string][]by
 			return fmt.Errorf("store pass asset %s: %w", name, err)
 		}
 	}
+	if data := assets["stamp.png"]; len(data) > 0 {
+		sanitized, err := sanitizeStampIcon(data)
+		if err != nil {
+			return err
+		}
+		if err := writeAtomicFile(filepath.Join(directory, "stamp.png"), sanitized, 0644); err != nil {
+			return fmt.Errorf("store pass asset stamp.png: %w", err)
+		}
+	}
 	if err := validatePassAssetBundle(directory); err != nil {
 		return ValidationError{Message: err.Error()}
+	}
+	return nil
+}
+
+func (s AppleWalletService) StoreCustomStampIcon(assetBundleRef string, data []byte) error {
+	assetBundleRef = strings.TrimSpace(strings.ToLower(assetBundleRef))
+	if !credentialAliasPattern.MatchString(assetBundleRef) || s.assetBasePath == "" {
+		return ValidationError{Message: "pass asset bundle is not configured"}
+	}
+	directory := filepath.Join(s.assetBasePath, assetBundleRef)
+	if err := validatePassAssetBundle(directory); err != nil {
+		return ValidationError{Message: err.Error()}
+	}
+	sanitized, err := sanitizeStampIcon(data)
+	if err != nil {
+		return err
+	}
+	if err := writeAtomicFile(filepath.Join(directory, "stamp.png"), sanitized, 0644); err != nil {
+		return fmt.Errorf("store custom stamp icon: %w", err)
+	}
+	return nil
+}
+
+func (s AppleWalletService) StampArtwork(assetBundleRef string, source string) ([]byte, error) {
+	assetBundleRef = strings.TrimSpace(strings.ToLower(assetBundleRef))
+	if !credentialAliasPattern.MatchString(assetBundleRef) || s.assetBasePath == "" {
+		return nil, ValidationError{Message: "pass asset bundle is not configured"}
+	}
+	var filename string
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "logo":
+		filename = "icon@3x.png"
+	case "custom":
+		filename = "stamp.png"
+	default:
+		return nil, ValidationError{Message: "stamp artwork source must be logo or custom"}
+	}
+	data, err := os.ReadFile(filepath.Join(s.assetBasePath, assetBundleRef, filename))
+	if err != nil {
+		return nil, ValidationError{Message: "stamp artwork is not configured"}
+	}
+	if _, err := png.DecodeConfig(bytes.NewReader(data)); err != nil {
+		return nil, ValidationError{Message: "stamp artwork is not a valid PNG"}
+	}
+	return data, nil
+}
+
+func validateStoredStampIcon(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("custom stamp icon is not configured")
+	}
+	if _, err := sanitizeStampIcon(data); err != nil {
+		return fmt.Errorf("custom stamp icon is invalid: %w", err)
 	}
 	return nil
 }

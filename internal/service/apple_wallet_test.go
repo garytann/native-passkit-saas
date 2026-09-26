@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -15,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"native-ios-passkit-wip/internal/config"
 	"native-ios-passkit-wip/internal/domain"
 )
 
@@ -78,6 +80,31 @@ func TestValidatePassAssetBundleRejectsIncorrectScale(t *testing.T) {
 
 	if err := validatePassAssetBundle(directory); err == nil {
 		t.Fatal("expected incorrectly scaled asset bundle to fail")
+	}
+}
+
+func TestStampArtworkReturnsMerchantLogoAndCustomIcon(t *testing.T) {
+	basePath := t.TempDir()
+	bundle := filepath.Join(basePath, "merchant-assets")
+	if err := os.MkdirAll(bundle, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestPNG(t, filepath.Join(bundle, "icon@3x.png"), 87, 87)
+	writeTestPNG(t, filepath.Join(bundle, "stamp.png"), 128, 128)
+	service := NewAppleWalletService(config.Config{PassAssetBasePath: basePath}, nil)
+
+	for source, expectedWidth := range map[string]int{"logo": 87, "custom": 128} {
+		data, err := service.StampArtwork("merchant-assets", source)
+		if err != nil {
+			t.Fatalf("read %s artwork: %v", source, err)
+		}
+		cfg, err := png.DecodeConfig(bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Width != expectedWidth {
+			t.Fatalf("expected %s artwork width %d, got %d", source, expectedWidth, cfg.Width)
+		}
 	}
 }
 
@@ -156,15 +183,17 @@ func TestValidatePassDesignRequestRejectsInsecureLink(t *testing.T) {
 
 func validPassDesignRequest() UpsertApplePassDesignRequest {
 	return UpsertApplePassDesignRequest{
-		MerchantID:         "MCH-TEST1234",
-		PassTypeIdentifier: "pass.com.justloyalty.test",
-		ProgramName:        "Test Loyalty",
-		PassDescription:    "Collect stamps and enjoy rewards.",
-		StampGoal:          10,
-		RewardTitle:        "Free Coffee",
-		BackgroundColor:    "#5434F5",
-		ForegroundColor:    "#FFFFFF",
-		LabelColor:         "#E1DCFF",
+		MerchantID:          "MCH-TEST1234",
+		PassTypeIdentifier:  "pass.com.justloyalty.test",
+		ProgramName:         "Test Loyalty",
+		PassDescription:     "Collect stamps and enjoy rewards.",
+		StampGoal:           10,
+		RewardTitle:         "Free Coffee",
+		BackgroundColor:     "#5434F5",
+		ForegroundColor:     "#FFFFFF",
+		LabelColor:          "#E1DCFF",
+		CampaignDisplayMode: "details",
+		StampIconKey:        "none",
 	}
 }
 

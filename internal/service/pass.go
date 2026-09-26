@@ -39,13 +39,14 @@ type ActiveCampaignRepository interface {
 }
 
 type PassPreview struct {
-	Pass       applepass.Pass
-	Member     applepass.StampCardMember
-	Barcode    applepass.Barcode
-	PassURL    string
-	PreviewURL string
-	QRCodeURL  string
-	LogoBase64 string
+	Pass        applepass.Pass
+	Member      applepass.StampCardMember
+	Barcode     applepass.Barcode
+	PassURL     string
+	PreviewURL  string
+	QRCodeURL   string
+	LogoBase64  string
+	StripBase64 string
 }
 
 func NewPassService(cfg config.Config, repo MemberRepository, linker PassLinker) PassService {
@@ -103,7 +104,16 @@ func (s PassService) createPackage(ctx context.Context, memberID string, expecte
 	if err != nil {
 		return nil, err
 	}
-	data, err := s.generatorFor(credential, design).Create(pass)
+	dynamicAssets, err := s.stampStripAssets(design, member)
+	if err != nil {
+		return nil, fmt.Errorf("render stamp strip: %w", err)
+	}
+	if len(dynamicAssets) == 0 {
+		pass.SuppressStripShine = false
+	}
+	generator := s.generatorFor(credential, design)
+	generator.DynamicAssets = dynamicAssets
+	data, err := generator.Create(pass)
 	if err != nil {
 		return nil, fmt.Errorf("create pass package: %w", err)
 	}
@@ -130,14 +140,26 @@ func (s PassService) Preview(ctx context.Context, memberID string) (PassPreview,
 		barcode = pass.Barcodes[0]
 	}
 
+	dynamicAssets, err := s.stampStripAssets(design, member)
+	if err != nil {
+		return PassPreview{}, fmt.Errorf("render stamp strip: %w", err)
+	}
+	if len(dynamicAssets) == 0 {
+		pass.SuppressStripShine = false
+	}
+	stripBase64 := ""
+	if strip := dynamicAssets["strip@2x.png"]; len(strip) > 0 {
+		stripBase64 = base64.StdEncoding.EncodeToString(strip)
+	}
 	return PassPreview{
-		Pass:       pass,
-		Member:     member,
-		Barcode:    barcode,
-		PassURL:    s.linker.PassURL(memberID),
-		PreviewURL: s.linker.PreviewURL(memberID),
-		QRCodeURL:  s.linker.QRCodeURL(memberID),
-		LogoBase64: s.previewLogo(design),
+		Pass:        pass,
+		Member:      member,
+		Barcode:     barcode,
+		PassURL:     s.linker.PassURL(memberID),
+		PreviewURL:  s.linker.PreviewURL(memberID),
+		QRCodeURL:   s.linker.QRCodeURL(memberID),
+		LogoBase64:  s.previewLogo(design),
+		StripBase64: stripBase64,
 	}, nil
 }
 
@@ -270,6 +292,7 @@ func (s PassService) stampCardPass(ctx context.Context, member applepass.StampCa
 		TermsText:           design.TermsText,
 		Links:               links,
 		CampaignDisplayMode: design.CampaignDisplayMode,
+		StampIconKey:        design.StampIconKey,
 	}, member)
 	return pass, design, nil
 }
@@ -364,8 +387,31 @@ func (s PassService) activeDesign(ctx context.Context, applePassTypeID string, m
 		SupportText:         "Contact the merchant for loyalty card assistance.",
 		TermsText:           "Collect one stamp for each eligible purchase. Rewards are subject to outlet terms.",
 		CampaignDisplayMode: "details",
+		StampIconKey:        "logo",
 		Status:              "active",
 	}, nil
+}
+
+func (s PassService) stampStripAssets(design domain.ApplePassDesign, member applepass.StampCardMember) (map[string][]byte, error) {
+	artworkPath := ""
+	assetPath := s.assetBundlePath(design)
+	if assetPath != "" {
+		switch design.StampIconKey {
+		case "logo":
+			artworkPath = filepath.Join(assetPath, "icon@3x.png")
+		case "custom":
+			artworkPath = filepath.Join(assetPath, "stamp.png")
+		}
+	}
+	return applepass.RenderStampStrips(applepass.StampStripOptions{
+		IconKey:         design.StampIconKey,
+		ArtworkPath:     artworkPath,
+		StampCount:      member.StampCount,
+		StampGoal:       design.StampGoal,
+		BackgroundColor: design.BackgroundColor,
+		ForegroundColor: design.ForegroundColor,
+		LabelColor:      design.LabelColor,
+	})
 }
 
 func (s PassService) assetBundlePath(design domain.ApplePassDesign) string {

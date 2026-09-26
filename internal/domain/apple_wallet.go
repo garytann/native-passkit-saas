@@ -88,6 +88,7 @@ type ApplePassDesign struct {
 	TermsText           string          `json:"terms_text"`
 	Links               []ApplePassLink `json:"links"`
 	CampaignDisplayMode string          `json:"campaign_display_mode"`
+	StampIconKey        string          `json:"stamp_icon_key"`
 	Status              string          `json:"status"`
 	Version             int             `json:"version"`
 	CreatedAt           time.Time       `json:"created_at"`
@@ -112,6 +113,7 @@ type UpsertApplePassDesignInput struct {
 	TermsText           string
 	Links               []UpsertApplePassLinkInput
 	CampaignDisplayMode string
+	StampIconKey        string
 }
 
 type ApplePassLink struct {
