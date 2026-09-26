@@ -6,6 +6,7 @@ require (
 	github.com/jackc/pgx/v5 v5.6.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	golang.org/x/crypto v0.31.0
+	golang.org/x/image v0.23.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.2
 )
