@@ -102,7 +102,7 @@ func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCa
 		AltText:         member.BarcodeID,
 	}
 	backFields := []Field{
-		{Key: "about", Label: "About This Programme", Value: design.PassDescription},
+		{Key: "programme_name", Label: "Programme", Value: design.ProgramName},
 	}
 	hasCampaign := member.PromotionTitle != "" && member.Promotion != ""
 	if hasCampaign && campaignAppearsInDetails(design.CampaignDisplayMode) {
@@ -159,9 +159,6 @@ func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCa
 					Value:         stampProgress(member.StampCount, member.StampGoal),
 					ChangeMessage: "Your stamp progress is now %@.",
 				},
-			},
-			PrimaryFields: []Field{
-				{Key: "loyalty_program", Value: design.ProgramName},
 			},
 			SecondaryFields: []Field{
 				{
@@ -271,9 +268,9 @@ func loyaltyProgramName(member StampCardMember) string {
 		return member.RewardName
 	}
 	if member.BrandName == "" {
-		return "Loyalty Program"
+		return "Loyalty Card"
 	}
-	return fmt.Sprintf("%s Loyalty Program", member.BrandName)
+	return fmt.Sprintf("%s Loyalty Card", member.BrandName)
 }
 
 func stampProgress(count int, goal int) string {

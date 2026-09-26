@@ -263,7 +263,7 @@ function DesignStep({ onboarding, busy, onSave }) {
   const existing = onboarding.design;
   const existingLinks = Object.fromEntries((existing?.links ?? []).map((link) => [link.link_type, link.url]));
   const [values, setValues] = useState({
-    programName: existing?.program_name ?? `${onboarding.merchant.merchant} Loyalty Program`,
+    programName: existing?.program_name ?? `${onboarding.merchant.merchant} Loyalty Card`,
     passDescription: existing?.pass_description ?? `Collect stamps and enjoy rewards at ${onboarding.merchant.merchant}.`,
     stampGoal: existing?.stamp_goal ?? 10,
     rewardTitle: existing?.reward_title ?? "Loyalty Reward",
@@ -297,6 +297,12 @@ function DesignStep({ onboarding, busy, onSave }) {
           <ColorField label="Background" value={values.backgroundColor} onChange={(value) => setValues({ ...values, backgroundColor: value })} />
           <ColorField label="Text" value={values.foregroundColor} onChange={(value) => setValues({ ...values, foregroundColor: value })} />
           <ColorField label="Labels" value={values.labelColor} onChange={(value) => setValues({ ...values, labelColor: value })} />
+        </div>
+        <div className="pass-asset-guidance">
+          <strong>Apple Wallet artwork sizes</strong>
+          <span>Icons: 38 × 38, 76 × 76, and 114 × 114 px.</span>
+          <span>Logos: 50–160 × 50, 100–320 × 100, and 150–480 × 150 px.</span>
+          <small>Upload PNG files using the exact <code>icon.png</code>, <code>icon@2x.png</code>, <code>icon@3x.png</code>, <code>logo.png</code>, <code>logo@2x.png</code>, and <code>logo@3x.png</code> filenames. Transparent icon backgrounds are recommended.</small>
         </div>
         <div className="asset-file-grid">{assetNames.map((name) => <FileField key={name} label={name} hint={files[name]?.name ?? (onboarding.assets_uploaded ? "Already uploaded" : "PNG required")} accept="image/png" onChange={(file) => setFiles((current) => ({ ...current, [name]: file }))} />)}</div>
         <div className="stamp-picker-field">

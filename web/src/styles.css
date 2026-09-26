@@ -129,6 +129,10 @@
   grid-column: 1 / -1;
 }
 
+.pass-form-grid > .wide {
+  grid-column: 1 / -1;
+}
+
 .pass-form-grid input,
 .pass-form-grid textarea {
   width: 100%;
@@ -239,11 +243,21 @@
 }
 
 .stamp-custom-upload small,
-.stamp-picker-note {
+.stamp-picker-note,
+.stamp-source-note {
   color: #7b818c;
   font-size: 12px;
   font-weight: 500;
   line-height: 1.45;
+}
+
+.stamp-source-note {
+  margin: 0;
+}
+
+.stamp-source-note code {
+  color: #4d4381;
+  font-weight: 700;
 }
 
 .stamp-legacy-note {
@@ -258,36 +272,47 @@
 }
 
 .stamp-row-preview {
-  min-height: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 9px 10px;
+  min-height: 80px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 12px 10px;
   border-radius: 7px;
   background: var(--brand-purple);
   overflow: hidden;
 }
 
-.stamp-row-preview > span {
-  width: min(38px, 9%);
-  min-width: 24px;
+.stamp-row-preview.two-rows {
+  min-height: 144px;
+}
+
+.stamp-preview-row {
+  width: min(100%, var(--stamp-row-max-width));
+  display: grid;
+  grid-template-columns: repeat(var(--stamp-columns), minmax(0, 1fr));
+  gap: min(10px, 2.5vw);
+}
+
+.stamp-slot {
+  width: 100%;
+  max-width: 56px;
   aspect-ratio: 1;
   display: grid;
   place-items: center;
-	border-radius: 50%;
-	color: var(--brand-purple);
-	background: #fff;
+  border-radius: 50%;
+  color: var(--brand-purple);
+  background: #fff;
 }
 
-.stamp-row-preview > span.empty {
-	color: transparent;
-	background: #fff;
+.stamp-slot.empty {
+  color: transparent;
+  background: #fff;
 }
 
 .stamp-row-preview img {
-	width: 65%;
-	height: 65%;
+  width: 70%;
+  height: 70%;
   object-fit: contain;
 }
 
@@ -462,7 +487,6 @@
 }
 
 .wallet-front-header span,
-.wallet-front-primary span,
 .wallet-front-secondary span,
 .wallet-front-auxiliary span {
   color: #e2ddff;
@@ -476,33 +500,23 @@
   font-weight: 500;
 }
 
-.wallet-front-primary {
-  align-self: center;
-  display: grid;
-  gap: 6px;
-}
-
 .wallet-front-strip {
   align-self: center;
   display: grid;
-  gap: 18px;
 }
 
 .wallet-front-strip .stamp-row-preview {
-  min-height: 48px;
-  padding: 5px 0;
+  min-height: 80px;
+  padding: 0;
   background: transparent;
+}
+
+.wallet-front-strip .stamp-row-preview.two-rows {
+  min-height: 144px;
 }
 
 .wallet-front-strip .stamp-row-preview.numeric-only {
   display: none;
-}
-
-.wallet-front-primary strong {
-  overflow-wrap: anywhere;
-  font-size: 32px;
-  font-weight: 500;
-  line-height: 1.12;
 }
 
 .wallet-front-supporting {
@@ -1026,8 +1040,35 @@
 .secure-upload-note,
 .color-fields,
 .asset-file-grid,
+.pass-asset-guidance,
 .stamp-picker-field {
   grid-column: 1 / -1;
+}
+
+.pass-asset-guidance {
+  display: grid;
+  gap: 5px;
+  padding: 13px 14px;
+  border-left: 3px solid var(--brand-purple);
+  color: #505765;
+  background: #f7f6ff;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.pass-asset-guidance strong {
+  color: #292446;
+  font-size: 13px;
+}
+
+.pass-asset-guidance small {
+  color: #737986;
+  line-height: 1.5;
+}
+
+.pass-asset-guidance code {
+  color: #4d4381;
+  font-weight: 700;
 }
 
 .stamp-picker-field {

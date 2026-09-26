@@ -843,9 +843,6 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
       line-height: 1.2;
       margin-top: 3px;
     }
-    .primary {
-      padding: 22px 24px 24px;
-    }
 	.strip-area {
 	  position: relative;
 	  min-height: 144px;
@@ -858,14 +855,6 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
 	  height: 144px;
 	  object-fit: cover;
 	}
-	.strip-area .primary {
-	  position: relative;
-	  z-index: 1;
-	}
-    .primary .value {
-      font-size: 30px;
-      font-weight: 750;
-    }
     .supporting-fields {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
@@ -949,15 +938,11 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
         </div>
         {{end}}
       </div>
+	  {{if .StripBase64}}
 	  <div class="strip-area">
-		{{if .StripBase64}}<img class="strip-artwork" src="data:image/png;base64,{{.StripBase64}}" alt="Stamp progress">{{end}}
-		{{with index .Pass.StoreCard.PrimaryFields 0}}
-		<div class="primary">
-		  {{if .Label}}<div class="label">{{.Label}}</div>{{end}}
-		  <div class="value">{{.Value}}</div>
-		</div>
-		{{end}}
+		<img class="strip-artwork" src="data:image/png;base64,{{.StripBase64}}" alt="Stamp progress">
 	  </div>
+	  {{end}}
       <div class="supporting-fields">
         {{with index .Pass.StoreCard.SecondaryFields 0}}
         <div class="secondary">

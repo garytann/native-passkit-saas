@@ -2,6 +2,7 @@ package applepass
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -76,6 +77,61 @@ func TestRenderStampStripsDrawsExpectedFilledCount(t *testing.T) {
 			t.Fatalf("expected %d filled stamp slots, got %d", expected, got)
 		}
 		assertWhitePhysicalSlots(t, assets["strip.png"], 10)
+	}
+}
+
+func TestStampSlotRectsUseAdaptiveBalancedRows(t *testing.T) {
+	for _, test := range []struct {
+		goal     int
+		rowSizes []int
+	}{
+		{goal: 1, rowSizes: []int{1}},
+		{goal: 5, rowSizes: []int{5}},
+		{goal: 6, rowSizes: []int{3, 3}},
+		{goal: 7, rowSizes: []int{4, 3}},
+		{goal: 9, rowSizes: []int{5, 4}},
+		{goal: 10, rowSizes: []int{5, 5}},
+	} {
+		t.Run(fmt.Sprintf("goal_%d", test.goal), func(t *testing.T) {
+			positions := stampSlotRects(test.goal, 1)
+			if len(positions) != test.goal {
+				t.Fatalf("expected %d positions, got %d", test.goal, len(positions))
+			}
+			rows := make(map[int]int)
+			var rowOrder []int
+			for _, position := range positions {
+				if position.Dx() != stampSpotDiameter || position.Dy() != stampSpotDiameter {
+					t.Fatalf("unexpected stamp dimensions: %v", position)
+				}
+				if _, exists := rows[position.Min.Y]; !exists {
+					rowOrder = append(rowOrder, position.Min.Y)
+				}
+				rows[position.Min.Y]++
+			}
+			if len(rowOrder) != len(test.rowSizes) {
+				t.Fatalf("expected %d rows, got %d", len(test.rowSizes), len(rowOrder))
+			}
+			for index, expected := range test.rowSizes {
+				if got := rows[rowOrder[index]]; got != expected {
+					t.Fatalf("row %d: expected %d stamps, got %d", index, expected, got)
+				}
+			}
+		})
+	}
+}
+
+func TestRenderStampStripsFillsTopRowBeforeBottomRow(t *testing.T) {
+	assets, err := RenderStampStrips(StampStripOptions{
+		IconKey:         "star",
+		StampCount:      5,
+		StampGoal:       7,
+		BackgroundColor: "#5434F5",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := countFilledStampSlots(t, assets["strip.png"], 7); got != 5 {
+		t.Fatalf("expected five filled stamps across rows, got %d", got)
 	}
 }
 
@@ -161,15 +217,10 @@ func countFilledStampSlots(t *testing.T, data []byte, goal int) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	margin, gap := 22, 8
-	slotSize := minInt(42, (stampStripWidth-2*margin-(goal-1)*gap)/goal)
-	rowWidth := goal*slotSize + (goal-1)*gap
-	startX := (stampStripWidth - rowWidth) / 2
-	startY := stampStripHeight - slotSize - 10
 	filled := 0
-	for slot := 0; slot < goal; slot++ {
-		centerX := startX + slot*(slotSize+gap) + slotSize/2
-		centerY := startY + slotSize/2
+	for _, position := range stampSlotRects(goal, 1) {
+		centerX := position.Min.X + position.Dx()/2
+		centerY := position.Min.Y + position.Dy()/2
 		red, green, blue, _ := img.At(centerX, centerY).RGBA()
 		if red < 0xf000 || green < 0xf000 || blue < 0xf000 {
 			filled++
@@ -184,14 +235,9 @@ func assertWhitePhysicalSlots(t *testing.T, data []byte, goal int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	margin, gap := 22, 8
-	slotSize := minInt(42, (stampStripWidth-2*margin-(goal-1)*gap)/goal)
-	rowWidth := goal*slotSize + (goal-1)*gap
-	startX := (stampStripWidth - rowWidth) / 2
-	startY := stampStripHeight - slotSize - 10
-	for slot := 0; slot < goal; slot++ {
-		x := startX + slot*(slotSize+gap) + slotSize/2
-		red, green, blue, _ := img.At(x, startY+2).RGBA()
+	for slot, position := range stampSlotRects(goal, 1) {
+		x := position.Min.X + position.Dx()/2
+		red, green, blue, _ := img.At(x, position.Min.Y+2).RGBA()
 		if red < 0xf000 || green < 0xf000 || blue < 0xf000 {
 			t.Fatalf("expected slot %d to have a white physical stamp circle", slot)
 		}

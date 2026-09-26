@@ -258,7 +258,6 @@ export default function PassesPage({ session }) {
             <div className="wallet-front-sheet">
               <div className="wallet-front-header"><span>Stamps</span><strong>{previewProgress} / {form.stampGoal}</strong></div>
               <div className="wallet-front-strip">
-                <div className="wallet-front-primary"><strong>{form.programName || "Programme name"}</strong></div>
                 <StampRowPreview iconKey={stampIconKey} sourceFile={stampIconFile} sourceURL={stampArtworkURL} goal={form.stampGoal} progress={previewProgress} />
               </div>
               <div className={`wallet-front-supporting ${form.showCampaignOnFront ? "with-promotion" : ""}`}>
@@ -270,7 +269,7 @@ export default function PassesPage({ session }) {
             </div>
             <div className="wallet-preview-divider"><span>Information</span></div>
             <div className="wallet-details-sheet">
-              <PreviewItem label="About This Programme" value={form.passDescription} />
+              <PreviewItem label="Programme" value={form.programName} />
               <PreviewItem label="Latest Promotion" value="Managed from Campaigns" muted />
               <PreviewItem label="How to Collect Stamps" value={form.stampInstructions} />
               <PreviewItem label="Reward Details" value={form.rewardDetails} />

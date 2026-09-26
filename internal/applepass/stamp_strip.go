@@ -15,9 +15,13 @@ import (
 )
 
 const (
-	stampStripWidth  = 375
-	stampStripHeight = 144
-	maxVisualStamps  = 10
+	stampStripWidth        = 375
+	stampStripHeight       = 144
+	maxVisualStamps        = 10
+	maxStampsPerRow        = 5
+	stampSpotDiameter      = 56
+	stampSpotHorizontalGap = 10
+	stampSpotVerticalGap   = 8
 )
 
 type StampStripOptions struct {
@@ -70,20 +74,39 @@ func renderStampStrip(options StampStripOptions, artwork image.Image, scale int)
 
 	goal := options.StampGoal
 	count := minInt(maxInt(options.StampCount, 0), goal)
-	margin := 22 * scale
-	gap := 8 * scale
-	available := width - 2*margin - (goal-1)*gap
-	slotSize := minInt(42*scale, available/goal)
-	rowWidth := goal*slotSize + (goal-1)*gap
-	startX := (width - rowWidth) / 2
-	startY := height - slotSize - 10*scale
 	mask := builtInStampMask(options.IconKey)
 
-	for index := 0; index < goal; index++ {
-		rect := image.Rect(startX+index*(slotSize+gap), startY, startX+index*(slotSize+gap)+slotSize, startY+slotSize)
+	for index, rect := range stampSlotRects(goal, scale) {
 		drawPhysicalStampSpot(canvas, rect, artwork, mask, index < count, background)
 	}
 	return canvas
+}
+
+func stampSlotRects(goal int, scale int) []image.Rectangle {
+	if goal < 1 || goal > maxVisualStamps || scale < 1 {
+		return nil
+	}
+	rowCounts := []int{goal}
+	if goal > maxStampsPerRow {
+		rowCounts = []int{(goal + 1) / 2, goal / 2}
+	}
+	diameter := stampSpotDiameter * scale
+	horizontalGap := stampSpotHorizontalGap * scale
+	verticalGap := stampSpotVerticalGap * scale
+	totalHeight := len(rowCounts)*diameter + (len(rowCounts)-1)*verticalGap
+	startY := (stampStripHeight*scale - totalHeight) / 2
+
+	positions := make([]image.Rectangle, 0, goal)
+	for rowIndex, rowCount := range rowCounts {
+		rowWidth := rowCount*diameter + (rowCount-1)*horizontalGap
+		startX := (stampStripWidth*scale - rowWidth) / 2
+		y := startY + rowIndex*(diameter+verticalGap)
+		for column := 0; column < rowCount; column++ {
+			x := startX + column*(diameter+horizontalGap)
+			positions = append(positions, image.Rect(x, y, x+diameter, y+diameter))
+		}
+	}
+	return positions
 }
 
 func drawPhysicalStampSpot(destination *image.NRGBA, rect image.Rectangle, artwork image.Image, mask *image.Alpha, filled bool, ink color.NRGBA) {
@@ -92,7 +115,7 @@ func drawPhysicalStampSpot(destination *image.NRGBA, rect image.Rectangle, artwo
 		return
 	}
 
-	iconSize := maxInt(1, int(math.Round(float64(rect.Dx())*.65)))
+	iconSize := maxInt(1, int(math.Round(float64(rect.Dx())*.70)))
 	if artwork != nil {
 		target := containedImageRect(rect, artwork.Bounds(), iconSize)
 		scaled := image.NewNRGBA(image.Rect(0, 0, target.Dx(), target.Dy()))

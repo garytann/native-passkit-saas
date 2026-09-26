@@ -57,9 +57,9 @@ func TestValidateAppleCertificateRejectsWrongPassType(t *testing.T) {
 
 func TestValidatePassAssetBundleAcceptsScaledPNGAssets(t *testing.T) {
 	directory := t.TempDir()
-	writeTestPNG(t, filepath.Join(directory, "icon.png"), 29, 29)
-	writeTestPNG(t, filepath.Join(directory, "icon@2x.png"), 58, 58)
-	writeTestPNG(t, filepath.Join(directory, "icon@3x.png"), 87, 87)
+	writeTestPNG(t, filepath.Join(directory, "icon.png"), 38, 38)
+	writeTestPNG(t, filepath.Join(directory, "icon@2x.png"), 76, 76)
+	writeTestPNG(t, filepath.Join(directory, "icon@3x.png"), 114, 114)
 	writeTestPNG(t, filepath.Join(directory, "logo.png"), 160, 50)
 	writeTestPNG(t, filepath.Join(directory, "logo@2x.png"), 320, 100)
 	writeTestPNG(t, filepath.Join(directory, "logo@3x.png"), 480, 150)

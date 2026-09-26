@@ -369,9 +369,9 @@ func (s PassService) activeDesign(ctx context.Context, applePassTypeID string, m
 	if programName == "" {
 		brandName := strings.TrimSpace(member.BrandName)
 		if brandName == "" {
-			programName = "Loyalty Program"
+			programName = "Loyalty Card"
 		} else {
-			programName = brandName + " Loyalty Program"
+			programName = brandName + " Loyalty Card"
 		}
 	}
 	return domain.ApplePassDesign{

@@ -50,6 +50,8 @@ export default function StampArtworkPicker({ value, onChange, logoFile, customFi
         </label>
       ) : null}
 
+      {value === "logo" ? <p className="stamp-source-note">Uses the merchant&apos;s <code>icon@3x.png</code>. A transparent 114 × 114 px icon gives the cleanest result inside the white stamp circle.</p> : null}
+
       <StampRowPreview iconKey={value} sourceFile={value === "custom" ? customFile : logoFile} sourceURL={sourceURL} goal={goal} progress={progress} />
       <p className="stamp-picker-note">Use artwork with strong contrast against white. Visual stamps supplement the numeric counter and may not appear on Apple Watch or every Wallet layout.</p>
     </div>
@@ -69,14 +71,31 @@ export function StampRowPreview({ iconKey, sourceFile, sourceURL = "", goal = 10
   const showPreview = iconKey !== "none" && visualGoal > 0 && visualGoal <= 10;
   const filledCount = Math.min(Math.max(Number(progress) || 0, 0), visualGoal || 0);
   const artworkURL = localPreviewURL || sourceURL;
+  const rowSizes = visualGoal <= 5 ? [visualGoal] : [Math.ceil(visualGoal / 2), Math.floor(visualGoal / 2)];
+  let stampOffset = 0;
 
   return (
-    <div className={`stamp-row-preview ${showPreview ? "" : "numeric-only"}`} aria-label="Stamp artwork preview">
-      {showPreview ? Array.from({ length: visualGoal }, (_, index) => (
-        <span key={index} className={index < filledCount ? "filled" : "empty"}>
-          {index < filledCount ? (artworkURL ? <img src={artworkURL} alt="" /> : <PreviewIcon size={20} />) : null}
-        </span>
-      )) : <p>{visualGoal > 10 ? "Goals above 10 use the numeric stamp counter." : "The pass will use its numeric stamp counter only."}</p>}
+    <div className={`stamp-row-preview ${showPreview ? (rowSizes.length > 1 ? "two-rows" : "one-row") : "numeric-only"}`} aria-label="Stamp artwork preview">
+      {showPreview ? rowSizes.map((rowSize, rowIndex) => {
+        const rowStart = stampOffset;
+        stampOffset += rowSize;
+        return (
+          <span
+            className="stamp-preview-row"
+            key={`${rowIndex}-${rowSize}`}
+            style={{ "--stamp-columns": rowSize, "--stamp-row-max-width": `${rowSize * 56 + Math.max(0, rowSize - 1) * 10}px` }}
+          >
+            {Array.from({ length: rowSize }, (_, columnIndex) => {
+              const stampIndex = rowStart + columnIndex;
+              return (
+                <span key={stampIndex} className={`stamp-slot ${stampIndex < filledCount ? "filled" : "empty"}`}>
+                  {stampIndex < filledCount ? (artworkURL ? <img src={artworkURL} alt="" /> : <PreviewIcon size={24} />) : null}
+                </span>
+              );
+            })}
+          </span>
+        );
+      }) : <p>{visualGoal > 10 ? "Goals above 10 use the numeric stamp counter." : "The pass will use its numeric stamp counter only."}</p>}
     </div>
   );
 }

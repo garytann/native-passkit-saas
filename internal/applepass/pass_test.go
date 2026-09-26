@@ -1,6 +1,10 @@
 package applepass
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 	pass := NewStampCardPass(TemplateConfig{
@@ -55,11 +59,22 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 	if got := pass.StoreCard.HeaderFields[0].ChangeMessage; got != "Your stamp progress is now %@." {
 		t.Fatalf("expected stamp update change message, got %q", got)
 	}
-	if got := pass.StoreCard.PrimaryFields[0].Value; got != "Coffee Brew Loyalty Program" {
-		t.Fatalf("expected program name, got %v", got)
+	if len(pass.StoreCard.PrimaryFields) != 0 {
+		t.Fatalf("expected primary fields to be omitted, got %+v", pass.StoreCard.PrimaryFields)
 	}
-	if got := pass.StoreCard.PrimaryFields[0].Label; got != "" {
-		t.Fatalf("expected primary label to be omitted, got %q", got)
+	data, err := json.Marshal(pass)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "primaryFields") {
+		t.Fatalf("expected primaryFields to be omitted from pass JSON: %s", data)
+	}
+	programme, ok := fieldByKey(pass.StoreCard.BackFields, "programme_name")
+	if !ok || programme.Label != "Programme" || programme.Value != "Coffee Brew Loyalty Program" {
+		t.Fatalf("unexpected programme details field: %+v", programme)
+	}
+	if _, ok := fieldByKey(pass.StoreCard.BackFields, "about"); ok {
+		t.Fatal("expected About This Programme to be omitted")
 	}
 	if len(pass.StoreCard.SecondaryFields) != 1 {
 		t.Fatalf("expected one next reward field, got %d", len(pass.StoreCard.SecondaryFields))
@@ -101,6 +116,17 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 	}
 	if _, ok := fieldByKey(pass.StoreCard.BackFields, "member"); ok {
 		t.Fatal("expected member name to be omitted from pass fields")
+	}
+}
+
+func TestNewStampCardPassDefaultsToMerchantLoyaltyCard(t *testing.T) {
+	pass := NewStampCardPass(TemplateConfig{}, StampCardDesign{}, StampCardMember{BrandName: "Coffee Brew"})
+	programme, ok := fieldByKey(pass.StoreCard.BackFields, "programme_name")
+	if !ok || programme.Value != "Coffee Brew Loyalty Card" {
+		t.Fatalf("expected merchant loyalty card fallback, got %+v", programme)
+	}
+	if len(pass.StoreCard.PrimaryFields) != 0 {
+		t.Fatalf("expected no primary fields, got %+v", pass.StoreCard.PrimaryFields)
 	}
 }
 
