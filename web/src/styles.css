@@ -175,6 +175,142 @@
   background: #fbfcfe;
 }
 
+.stamp-artwork-editor,
+.stamp-artwork-picker {
+  display: grid;
+  gap: 14px;
+}
+
+.stamp-picker-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.stamp-picker-options button {
+  min-width: 0;
+  min-height: 68px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  border: 1px solid #d9dee8;
+  border-radius: 7px;
+  padding: 9px 6px;
+  color: #656c78;
+  background: #fbfcfe;
+  cursor: pointer;
+}
+
+.stamp-picker-options button span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.stamp-picker-options button:hover,
+.stamp-picker-options button.selected {
+  border-color: var(--brand-purple);
+  color: var(--brand-purple);
+  background: #f4f1ff;
+}
+
+.stamp-picker-options button:focus-visible {
+  outline: 3px solid var(--brand-purple-soft);
+  outline-offset: 2px;
+}
+
+.stamp-picker-options button:disabled {
+  cursor: not-allowed;
+  opacity: .65;
+}
+
+.stamp-custom-upload {
+  display: grid;
+  gap: 6px;
+  padding: 13px 14px;
+  border: 1px dashed #cbd2df;
+  border-radius: 7px;
+  color: #4e5664;
+  background: #fafbfd;
+}
+
+.stamp-custom-upload small,
+.stamp-picker-note {
+  color: #7b818c;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.stamp-legacy-note {
+  margin: 0;
+  padding: 11px 12px;
+  border: 1px solid #ded8ff;
+  border-radius: 7px;
+  color: #4b3d84;
+  background: #f6f3ff;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.stamp-row-preview {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 10px;
+  border-radius: 7px;
+  background: var(--brand-purple);
+  overflow: hidden;
+}
+
+.stamp-row-preview > span {
+  width: min(38px, 9%);
+  min-width: 24px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+	border-radius: 50%;
+	color: var(--brand-purple);
+	background: #fff;
+}
+
+.stamp-row-preview > span.empty {
+	color: transparent;
+	background: #fff;
+}
+
+.stamp-row-preview img {
+	width: 65%;
+	height: 65%;
+  object-fit: contain;
+}
+
+.stamp-row-preview.numeric-only {
+  min-height: 54px;
+  background: #f3f4f7;
+}
+
+.stamp-row-preview.numeric-only p,
+.stamp-picker-note {
+  margin: 0;
+}
+
+.stamp-row-preview.numeric-only p {
+  color: #737a86;
+  font-size: 12px;
+  text-align: center;
+}
+
+.stamp-artwork-editor .secondary-action {
+  width: fit-content;
+}
+
 .pass-toggle-copy {
   display: grid;
   gap: 4px;
@@ -344,6 +480,22 @@
   align-self: center;
   display: grid;
   gap: 6px;
+}
+
+.wallet-front-strip {
+  align-self: center;
+  display: grid;
+  gap: 18px;
+}
+
+.wallet-front-strip .stamp-row-preview {
+  min-height: 48px;
+  padding: 5px 0;
+  background: transparent;
+}
+
+.wallet-front-strip .stamp-row-preview.numeric-only {
+  display: none;
 }
 
 .wallet-front-primary strong {
@@ -873,8 +1025,26 @@
 .onboarding-form .primary-action,
 .secure-upload-note,
 .color-fields,
-.asset-file-grid {
+.asset-file-grid,
+.stamp-picker-field {
   grid-column: 1 / -1;
+}
+
+.stamp-picker-field {
+  display: grid;
+  gap: 12px;
+}
+
+.stamp-picker-field > div:first-child {
+  display: grid;
+  gap: 3px;
+  color: #4e5664;
+  font-size: 12px;
+}
+
+.stamp-picker-field > div:first-child small {
+  color: #7b818c;
+  font-weight: 500;
 }
 
 .onboarding-form input:not([type="file"]):not([type="color"]),
@@ -1144,6 +1314,10 @@
   .color-fields,
   .asset-file-grid {
     grid-column: 1;
+  }
+
+  .stamp-picker-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .activation-checks > div {

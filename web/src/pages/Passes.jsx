@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   BadgeCheck,
   ExternalLink,
@@ -8,6 +8,7 @@ import {
   Smartphone,
 } from "lucide-react";
 import { API_BASE, API_VERSION_PREFIX } from "../config/api.js";
+import StampArtworkPicker, { StampRowPreview } from "../components/StampArtworkPicker.jsx";
 
 const emptyForm = {
   programName: "",
@@ -30,10 +31,19 @@ export default function PassesPage({ session }) {
   const [passTypeIdentifier, setPassTypeIdentifier] = useState("");
   const [status, setStatus] = useState("loading");
   const [message, setMessage] = useState("");
+  const [stampIconKey, setStampIconKey] = useState("logo");
+  const [stampIconFile, setStampIconFile] = useState(null);
+  const [stampArtworkURL, setStampArtworkURL] = useState("");
+  const [stampStatus, setStampStatus] = useState("idle");
+  const stampArtworkRequest = useRef(0);
 
   useEffect(() => {
     if (session?.token) loadDesign();
   }, [session?.token]);
+
+  useEffect(() => () => {
+    if (stampArtworkURL) URL.revokeObjectURL(stampArtworkURL);
+  }, [stampArtworkURL]);
 
   async function request(options = {}) {
     const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/merchants/me/apple-wallet/pass-design`, {
@@ -56,10 +66,73 @@ export default function PassesPage({ session }) {
       setDesign(payload.design);
       setPassTypeIdentifier(payload.pass_type_identifier);
       setForm(formFromDesign(payload.design));
+      const iconKey = payload.design?.stamp_icon_key ?? "logo";
+      setStampIconKey(iconKey);
+      setStampIconFile(null);
+      await loadStampArtwork(iconKey);
       setStatus("ready");
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "Unable to load pass information");
+    }
+  }
+
+  async function loadStampArtwork(source) {
+    const requestID = ++stampArtworkRequest.current;
+    if (source !== "logo" && source !== "custom") {
+      setStampArtworkURL("");
+      return;
+    }
+    try {
+      const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/merchants/me/apple-wallet/stamp-icon?source=${encodeURIComponent(source)}`, {
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      if (!response.ok) throw new Error("stamp artwork is unavailable");
+      const url = URL.createObjectURL(await response.blob());
+      if (requestID !== stampArtworkRequest.current) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      setStampArtworkURL(url);
+    } catch {
+      if (requestID === stampArtworkRequest.current) setStampArtworkURL("");
+    }
+  }
+
+  function selectStampIcon(iconKey) {
+    setStampIconKey(iconKey);
+    if (iconKey === "logo") setStampIconFile(null);
+    loadStampArtwork(iconKey);
+  }
+
+  async function publishStampArtwork() {
+    if (stampIconKey === "custom" && !stampIconFile) {
+      setMessage("Choose a transparent PNG before publishing custom stamp artwork.");
+      return;
+    }
+    setStampStatus("saving");
+    setMessage("");
+    try {
+      const body = new FormData();
+      body.append("stamp_icon_key", stampIconKey);
+      if (stampIconFile) body.append("stamp_icon", stampIconFile);
+      const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/merchants/me/apple-wallet/stamp-icon`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${session.token}` },
+        body,
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error ?? `Stamp artwork returned ${response.status}`);
+      setDesign(payload.design);
+      const iconKey = payload.design?.stamp_icon_key ?? "logo";
+      setStampIconKey(iconKey);
+      setStampIconFile(null);
+      await loadStampArtwork(iconKey);
+      setStampStatus("idle");
+      setMessage(publishMessage(payload));
+    } catch (error) {
+      setStampStatus("error");
+      setMessage(error instanceof Error ? error.message : "Unable to publish stamp artwork");
     }
   }
 
@@ -96,6 +169,7 @@ export default function PassesPage({ session }) {
   }
 
   const links = useMemo(() => linksFromForm(form), [form]);
+  const previewProgress = Math.min(6, Number(form.stampGoal) || 0);
   const update = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }));
   const toggleCampaignFront = (event) => setForm((current) => ({ ...current, showCampaignOnFront: event.target.checked }));
 
@@ -135,6 +209,16 @@ export default function PassesPage({ session }) {
               <PassField label="Reward details" wide><textarea value={form.rewardDetails} onChange={update("rewardDetails")} maxLength={500} required /></PassField>
             </PassFormSection>
 
+            <PassFormSection title="Stamp artwork" description="Choose the icon customers see as they fill their stamp card.">
+              <div className="wide stamp-artwork-editor">
+                <StampArtworkPicker value={stampIconKey} onChange={selectStampIcon} customFile={stampIconFile} sourceURL={stampArtworkURL} onCustomFile={setStampIconFile} goal={form.stampGoal} disabled={stampStatus === "saving"} />
+                <button className="secondary-action" type="button" onClick={publishStampArtwork} disabled={stampStatus === "saving" || (stampIconKey === design.stamp_icon_key && !stampIconFile) || (stampIconKey === "custom" && !stampIconFile)}>
+                  {stampStatus === "saving" ? <RefreshCw className="spin" size={17} /> : <Save size={17} />}
+                  {stampStatus === "saving" ? "Publishing" : "Publish stamp artwork"}
+                </button>
+              </div>
+            </PassFormSection>
+
             <PassFormSection title="Campaign placement" description="Control where customers see the latest active promotion.">
               <label className="pass-toggle-field wide">
                 <span className="pass-toggle-copy">
@@ -166,14 +250,17 @@ export default function PassesPage({ session }) {
                 {status === "saving" ? "Publishing" : "Save and publish"}
               </button>
             </div>
-            {message ? <p className={`passes-message ${status === "error" ? "error" : ""}`}>{message}</p> : null}
+            {message ? <p className={`passes-message ${status === "error" || stampStatus === "error" ? "error" : ""}`}>{message}</p> : null}
           </form>
 
           <aside className="pass-details-preview" aria-label="Apple Wallet pass preview">
             <div className="preview-title"><Smartphone size={20} /><div><span>Pass preview</span><small>{passTypeIdentifier}</small></div></div>
             <div className="wallet-front-sheet">
-              <div className="wallet-front-header"><span>Stamps</span><strong>0 / {form.stampGoal}</strong></div>
-              <div className="wallet-front-primary"><strong>{form.programName || "Programme name"}</strong></div>
+              <div className="wallet-front-header"><span>Stamps</span><strong>{previewProgress} / {form.stampGoal}</strong></div>
+              <div className="wallet-front-strip">
+                <div className="wallet-front-primary"><strong>{form.programName || "Programme name"}</strong></div>
+                <StampRowPreview iconKey={stampIconKey} sourceFile={stampIconFile} sourceURL={stampArtworkURL} goal={form.stampGoal} progress={previewProgress} />
+              </div>
               <div className={`wallet-front-supporting ${form.showCampaignOnFront ? "with-promotion" : ""}`}>
                 <div className="wallet-front-secondary"><span>Next Reward</span><strong>{form.rewardTitle || "Loyalty Reward"}</strong></div>
                 {form.showCampaignOnFront ? (

@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import BrandLogo from "../components/BrandLogo.jsx";
+import StampArtworkPicker from "../components/StampArtworkPicker.jsx";
 import { ADMIN_SESSION_KEY, API_BASE, API_VERSION_PREFIX } from "../config/api.js";
 
 const steps = [
@@ -199,9 +200,15 @@ export default function AdminConsolePage() {
                 const form = new FormData(); form.append("pass_type_identifier", onboarding.pass_type.pass_type_identifier); form.append("pass_certificate", certificate); form.append("private_key", privateKey);
                 await api(`/admin/merchants/${selectedID}/apple-wallet/certificate-files`, { method: "POST", body: form });
               }, "Certificate validated and staged.")} /> : null}
-              {activeStep === "design" ? <DesignStep onboarding={onboarding} busy={status === "saving"} onSave={(values, files) => runAction(async () => {
+              {activeStep === "design" ? <DesignStep key={selectedID} onboarding={onboarding} busy={status === "saving"} onSave={(values, files) => runAction(async () => {
                 let assetBundleRef = onboarding.design?.asset_bundle_ref || onboarding.merchant.merchant_slug;
-                if (files) { const form = new FormData(); assetNames.forEach((name) => form.append(name, files[name])); const uploaded = await api(`/admin/merchants/${selectedID}/apple-wallet/pass-assets`, { method: "PUT", body: form }); assetBundleRef = uploaded.asset_bundle_ref; }
+                if (files) {
+                  const form = new FormData();
+                  assetNames.forEach((name) => { if (files[name]) form.append(name, files[name]); });
+                  if (files["stamp.png"]) form.append("stamp.png", files["stamp.png"]);
+                  const uploaded = await api(`/admin/merchants/${selectedID}/apple-wallet/pass-assets`, { method: "PUT", body: form });
+                  assetBundleRef = uploaded.asset_bundle_ref;
+                }
                 await api(`/admin/merchants/${selectedID}/apple-wallet/pass-design`, {
                   method: "PUT",
                   headers: { "Content-Type": "application/json" },
@@ -221,6 +228,7 @@ export default function AdminConsolePage() {
                     terms_text: values.termsText,
                     links: passLinks(values),
                     campaign_display_mode: "details",
+                    stamp_icon_key: values.stampIconKey,
                   }),
                 });
               }, "Pass artwork and design saved.")} /> : null}
@@ -269,14 +277,16 @@ function DesignStep({ onboarding, busy, onSave }) {
     websiteURL: existingLinks.website ?? "",
     instagramURL: existingLinks.instagram ?? "",
     whatsappURL: existingLinks.whatsapp ?? "",
+    stampIconKey: existing?.stamp_icon_key ?? "logo",
   });
   const [files, setFiles] = useState({});
   const completeFiles = assetNames.every((name) => files[name]);
+  const customStampReady = values.stampIconKey !== "custom" || Boolean(files["stamp.png"]) || existing?.stamp_icon_key === "custom";
   const update = (field) => (event) => setValues((current) => ({ ...current, [field]: event.target.value }));
 
   return (
     <StepShell eyebrow="Wallet appearance" title="Upload artwork and define the pass" description="The same validated artwork and information are used for both the preview and issued Wallet pass.">
-      <form className="onboarding-form design-form" onSubmit={(event) => { event.preventDefault(); onSave(values, completeFiles ? files : null); }}>
+      <form className="onboarding-form design-form" onSubmit={(event) => { event.preventDefault(); onSave(values, completeFiles || files["stamp.png"] ? files : null); }}>
         <Field label="Program name"><input value={values.programName} onChange={update("programName")} required /></Field>
         <Field label="Stamp goal"><input type="number" min="1" max="100" value={values.stampGoal} onChange={update("stampGoal")} readOnly={existing?.status === "active"} required /></Field>
         <Field label="Reward title"><input value={values.rewardTitle} onChange={update("rewardTitle")} maxLength={40} placeholder="Free Coffee" required /></Field>
@@ -289,12 +299,16 @@ function DesignStep({ onboarding, busy, onSave }) {
           <ColorField label="Labels" value={values.labelColor} onChange={(value) => setValues({ ...values, labelColor: value })} />
         </div>
         <div className="asset-file-grid">{assetNames.map((name) => <FileField key={name} label={name} hint={files[name]?.name ?? (onboarding.assets_uploaded ? "Already uploaded" : "PNG required")} accept="image/png" onChange={(file) => setFiles((current) => ({ ...current, [name]: file }))} />)}</div>
+        <div className="stamp-picker-field">
+          <div><strong>Stamp artwork</strong><small>Choose the artwork placed inside completed stamp spots.</small></div>
+          <StampArtworkPicker value={values.stampIconKey} onChange={(stampIconKey) => setValues((current) => ({ ...current, stampIconKey }))} logoFile={files["icon@3x.png"]} customFile={files["stamp.png"]} onCustomFile={(file) => setFiles((current) => ({ ...current, "stamp.png": file }))} goal={values.stampGoal} />
+        </div>
         <Field label="Website URL" wide><input type="url" value={values.websiteURL} onChange={update("websiteURL")} placeholder="https://merchant.example" /></Field>
         <Field label="Instagram URL" wide><input type="url" value={values.instagramURL} onChange={update("instagramURL")} placeholder="https://instagram.com/merchant" /></Field>
         <Field label="WhatsApp URL" wide><input type="url" value={values.whatsappURL} onChange={update("whatsappURL")} placeholder="https://wa.me/6591234567" /></Field>
         <Field label="Customer support" wide><textarea value={values.supportText} onChange={update("supportText")} required /></Field>
         <Field label="Terms and conditions" wide><textarea value={values.termsText} onChange={update("termsText")} required /></Field>
-        <button className="primary-action" disabled={busy || (!onboarding.assets_uploaded && !completeFiles) || !onboarding.certificate_validated} type="submit">Save pass design<ChevronRight size={17} /></button>
+        <button className="primary-action" disabled={busy || (!onboarding.assets_uploaded && !completeFiles) || !customStampReady || !onboarding.certificate_validated} type="submit">Save pass design<ChevronRight size={17} /></button>
       </form>
     </StepShell>
   );
