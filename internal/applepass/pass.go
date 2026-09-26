@@ -101,9 +101,7 @@ func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCa
 		MessageEncoding: "iso-8859-1",
 		AltText:         member.BarcodeID,
 	}
-	backFields := []Field{
-		{Key: "programme_name", Label: "Programme", Value: design.ProgramName},
-	}
+	var backFields []Field
 	hasCampaign := member.PromotionTitle != "" && member.Promotion != ""
 	if hasCampaign && campaignAppearsInDetails(design.CampaignDisplayMode) {
 		backFields = append(backFields, Field{
@@ -144,7 +142,7 @@ func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCa
 		SerialNumber:       member.ID,
 		TeamIdentifier:     cfg.TeamID,
 		OrganizationName:   cfg.OrganizationName,
-		Description:        design.PassDescription,
+		Description:        design.ProgramName,
 		SuppressStripShine: design.StampIconKey != "none" && design.StampGoal <= maxVisualStamps,
 		ForegroundColor:    walletColor(design.ForegroundColor),
 		BackgroundColor:    walletColor(design.BackgroundColor),

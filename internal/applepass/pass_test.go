@@ -44,8 +44,8 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 	if pass.BackgroundColor != "rgb(84, 52, 245)" {
 		t.Fatalf("expected configured purple background, got %q", pass.BackgroundColor)
 	}
-	if pass.Description != "Collect stamps and enjoy rewards at Coffee Brew." {
-		t.Fatalf("expected configured description, got %q", pass.Description)
+	if pass.Description != "Coffee Brew Loyalty Program" {
+		t.Fatalf("expected programme name as the Wallet description, got %q", pass.Description)
 	}
 	if pass.StoreCard == nil {
 		t.Fatal("expected storeCard payload")
@@ -69,9 +69,8 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 	if strings.Contains(string(data), "primaryFields") {
 		t.Fatalf("expected primaryFields to be omitted from pass JSON: %s", data)
 	}
-	programme, ok := fieldByKey(pass.StoreCard.BackFields, "programme_name")
-	if !ok || programme.Label != "Programme" || programme.Value != "Coffee Brew Loyalty Program" {
-		t.Fatalf("unexpected programme details field: %+v", programme)
+	if _, ok := fieldByKey(pass.StoreCard.BackFields, "programme_name"); ok {
+		t.Fatal("expected the duplicate programme details field to be omitted")
 	}
 	if _, ok := fieldByKey(pass.StoreCard.BackFields, "about"); ok {
 		t.Fatal("expected About This Programme to be omitted")
@@ -121,9 +120,11 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 
 func TestNewStampCardPassDefaultsToMerchantLoyaltyCard(t *testing.T) {
 	pass := NewStampCardPass(TemplateConfig{}, StampCardDesign{}, StampCardMember{BrandName: "Coffee Brew"})
-	programme, ok := fieldByKey(pass.StoreCard.BackFields, "programme_name")
-	if !ok || programme.Value != "Coffee Brew Loyalty Card" {
-		t.Fatalf("expected merchant loyalty card fallback, got %+v", programme)
+	if pass.Description != "Coffee Brew Loyalty Card" {
+		t.Fatalf("expected merchant loyalty card description fallback, got %q", pass.Description)
+	}
+	if _, ok := fieldByKey(pass.StoreCard.BackFields, "programme_name"); ok {
+		t.Fatal("expected no duplicate programme details field")
 	}
 	if len(pass.StoreCard.PrimaryFields) != 0 {
 		t.Fatalf("expected no primary fields, got %+v", pass.StoreCard.PrimaryFields)

@@ -12,7 +12,6 @@ import StampArtworkPicker, { StampRowPreview } from "../components/StampArtworkP
 
 const emptyForm = {
   programName: "",
-  passDescription: "",
   stampGoal: 10,
   rewardTitle: "",
   stampInstructions: "",
@@ -146,7 +145,7 @@ export default function PassesPage({ session }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           program_name: form.programName,
-          pass_description: form.passDescription,
+          pass_description: form.programName,
           stamp_goal: Number(form.stampGoal),
           reward_title: form.rewardTitle,
           stamp_instructions: form.stampInstructions,
@@ -204,7 +203,6 @@ export default function PassesPage({ session }) {
               <PassField label="Programme name"><input value={form.programName} onChange={update("programName")} maxLength={80} required /></PassField>
               <PassField label="Stamp goal"><input type="number" min="1" max="100" value={form.stampGoal} readOnly title="The stamp goal is locked after pass activation" required /></PassField>
               <PassField label="Reward title"><input value={form.rewardTitle} onChange={update("rewardTitle")} maxLength={40} placeholder="Free Coffee" required /></PassField>
-              <PassField label="Pass description" wide><textarea value={form.passDescription} onChange={update("passDescription")} maxLength={160} required /></PassField>
               <PassField label="How to collect stamps" wide><textarea value={form.stampInstructions} onChange={update("stampInstructions")} maxLength={500} required /></PassField>
               <PassField label="Reward details" wide><textarea value={form.rewardDetails} onChange={update("rewardDetails")} maxLength={500} required /></PassField>
             </PassFormSection>
@@ -269,7 +267,6 @@ export default function PassesPage({ session }) {
             </div>
             <div className="wallet-preview-divider"><span>Information</span></div>
             <div className="wallet-details-sheet">
-              <PreviewItem label="Programme" value={form.programName} />
               <PreviewItem label="Latest Promotion" value="Managed from Campaigns" muted />
               <PreviewItem label="How to Collect Stamps" value={form.stampInstructions} />
               <PreviewItem label="Reward Details" value={form.rewardDetails} />
@@ -308,7 +305,6 @@ function formFromDesign(design) {
   const links = Object.fromEntries((design?.links ?? []).map((link) => [link.link_type, link.url]));
   return {
     programName: design?.program_name ?? "",
-    passDescription: design?.pass_description ?? "",
     stampGoal: design?.stamp_goal ?? 10,
     rewardTitle: design?.reward_title ?? "Loyalty Reward",
     stampInstructions: design?.stamp_instructions ?? "",

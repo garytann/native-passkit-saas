@@ -215,7 +215,7 @@ export default function AdminConsolePage() {
                   body: JSON.stringify({
                     pass_type_identifier: onboarding.pass_type.pass_type_identifier,
                     program_name: values.programName,
-                    pass_description: values.passDescription,
+                    pass_description: values.programName,
                     stamp_goal: Number(values.stampGoal),
                     reward_title: values.rewardTitle,
                     background_color: values.backgroundColor,
@@ -264,7 +264,6 @@ function DesignStep({ onboarding, busy, onSave }) {
   const existingLinks = Object.fromEntries((existing?.links ?? []).map((link) => [link.link_type, link.url]));
   const [values, setValues] = useState({
     programName: existing?.program_name ?? `${onboarding.merchant.merchant} Loyalty Card`,
-    passDescription: existing?.pass_description ?? `Collect stamps and enjoy rewards at ${onboarding.merchant.merchant}.`,
     stampGoal: existing?.stamp_goal ?? 10,
     rewardTitle: existing?.reward_title ?? "Loyalty Reward",
     backgroundColor: existing?.background_color ?? "#5434F5",
@@ -290,7 +289,6 @@ function DesignStep({ onboarding, busy, onSave }) {
         <Field label="Program name"><input value={values.programName} onChange={update("programName")} required /></Field>
         <Field label="Stamp goal"><input type="number" min="1" max="100" value={values.stampGoal} onChange={update("stampGoal")} readOnly={existing?.status === "active"} required /></Field>
         <Field label="Reward title"><input value={values.rewardTitle} onChange={update("rewardTitle")} maxLength={40} placeholder="Free Coffee" required /></Field>
-        <Field label="Pass description" wide><textarea value={values.passDescription} onChange={update("passDescription")} required /></Field>
         <Field label="How to collect stamps" wide><textarea value={values.stampInstructions} onChange={update("stampInstructions")} required /></Field>
         <Field label="Reward details" wide><textarea value={values.rewardDetails} onChange={update("rewardDetails")} required /></Field>
         <div className="color-fields">

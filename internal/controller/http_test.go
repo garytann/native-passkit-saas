@@ -50,8 +50,8 @@ func TestPreviewTemplateRendersPassWithoutPrimaryFields(t *testing.T) {
 		t.Fatalf("render preview without primary fields: %v", err)
 	}
 	html := out.String()
-	if !strings.Contains(html, "Coffee Brew Loyalty Card") || !strings.Contains(html, "Programme") {
-		t.Fatalf("expected configured programme in preview details: %s", html)
+	if strings.Contains(html, "Programme") {
+		t.Fatalf("expected duplicate programme field to be absent from preview details: %s", html)
 	}
 	if strings.Contains(html, "About This Programme") {
 		t.Fatalf("expected legacy about field to be absent: %s", html)
