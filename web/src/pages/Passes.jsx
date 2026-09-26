@@ -21,6 +21,7 @@ const emptyForm = {
   websiteURL: "",
   instagramURL: "",
   whatsappURL: "",
+  showCampaignOnFront: false,
 };
 
 export default function PassesPage({ session }) {
@@ -80,6 +81,7 @@ export default function PassesPage({ session }) {
           support_text: form.supportText,
           terms_text: form.termsText,
           links: linksFromForm(form),
+          campaign_display_mode: form.showCampaignOnFront ? "front_and_details" : "details",
         }),
       });
       setDesign(payload.design);
@@ -95,6 +97,7 @@ export default function PassesPage({ session }) {
 
   const links = useMemo(() => linksFromForm(form), [form]);
   const update = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }));
+  const toggleCampaignFront = (event) => setForm((current) => ({ ...current, showCampaignOnFront: event.target.checked }));
 
   return (
     <div className="passes-page">
@@ -132,6 +135,19 @@ export default function PassesPage({ session }) {
               <PassField label="Reward details" wide><textarea value={form.rewardDetails} onChange={update("rewardDetails")} maxLength={500} required /></PassField>
             </PassFormSection>
 
+            <PassFormSection title="Campaign placement" description="Control where customers see the latest active promotion.">
+              <label className="pass-toggle-field wide">
+                <span className="pass-toggle-copy">
+                  <strong>Show latest promotion on pass front</strong>
+                  <small>Uses the campaign title. The full message remains in Pass Details.</small>
+                </span>
+                <span className="pass-toggle-control">
+                  <input type="checkbox" checked={form.showCampaignOnFront} onChange={toggleCampaignFront} />
+                  <span aria-hidden="true" />
+                </span>
+              </label>
+            </PassFormSection>
+
             <PassFormSection title="Useful links" description="Add direct links customers can open from Wallet.">
               <PassField label="Website" wide><input type="url" value={form.websiteURL} onChange={update("websiteURL")} placeholder="https://merchant.example" /></PassField>
               <PassField label="Instagram" wide><input type="url" value={form.instagramURL} onChange={update("instagramURL")} placeholder="https://instagram.com/merchant" /></PassField>
@@ -157,8 +173,13 @@ export default function PassesPage({ session }) {
             <div className="preview-title"><Smartphone size={20} /><div><span>Pass preview</span><small>{passTypeIdentifier}</small></div></div>
             <div className="wallet-front-sheet">
               <div className="wallet-front-header"><span>Stamps</span><strong>0 / {form.stampGoal}</strong></div>
-              <div className="wallet-front-primary"><span>Member Rewards</span><strong>{form.programName || "Programme name"}</strong></div>
-              <div className="wallet-front-secondary"><span>Next Reward</span><strong>{form.rewardTitle || "Loyalty Reward"}</strong></div>
+              <div className="wallet-front-primary"><strong>{form.programName || "Programme name"}</strong></div>
+              <div className={`wallet-front-supporting ${form.showCampaignOnFront ? "with-promotion" : ""}`}>
+                <div className="wallet-front-secondary"><span>Next Reward</span><strong>{form.rewardTitle || "Loyalty Reward"}</strong></div>
+                {form.showCampaignOnFront ? (
+                  <div className="wallet-front-auxiliary"><span>Latest Promotion</span><strong>Campaign title from Campaigns</strong></div>
+                ) : null}
+              </div>
             </div>
             <div className="wallet-preview-divider"><span>Information</span></div>
             <div className="wallet-details-sheet">
@@ -211,6 +232,7 @@ function formFromDesign(design) {
     websiteURL: links.website ?? "",
     instagramURL: links.instagram ?? "",
     whatsappURL: links.whatsapp ?? "",
+    showCampaignOnFront: design?.campaign_display_mode === "front_and_details",
   };
 }
 

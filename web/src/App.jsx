@@ -770,6 +770,7 @@ function CampaignsContent({ campaigns, status, error, form, setForm, createStatu
               placeholder="Double stamps weekend"
               value={form.title}
               onChange={(event) => updateForm("title", event.target.value)}
+              maxLength={40}
               required
             />
             <label htmlFor="campaignMessage">Push message</label>
