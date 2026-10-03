@@ -56,4 +56,7 @@ func TestPreviewTemplateRendersPassWithoutPrimaryFields(t *testing.T) {
 	if strings.Contains(html, "About This Programme") {
 		t.Fatalf("expected legacy about field to be absent: %s", html)
 	}
+	if !strings.Contains(html, "Next Reward") || !strings.Contains(html, "10 stamps away") {
+		t.Fatalf("expected remaining-stamps secondary field in preview: %s", html)
+	}
 }

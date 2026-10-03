@@ -51,13 +51,10 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 		t.Fatal("expected storeCard payload")
 	}
 	if pass.SuppressStripShine {
-		t.Fatal("expected goals above ten to retain the numeric-only fallback")
+		t.Fatal("expected goals above ten to retain the remaining-stamps fallback")
 	}
-	if got := pass.StoreCard.HeaderFields[0].Value; got != "6 / 12" {
-		t.Fatalf("expected design stamp goal in header, got %v", got)
-	}
-	if got := pass.StoreCard.HeaderFields[0].ChangeMessage; got != "Your stamp progress is now %@." {
-		t.Fatalf("expected stamp update change message, got %q", got)
+	if len(pass.StoreCard.HeaderFields) != 0 {
+		t.Fatalf("expected header fields to be omitted, got %+v", pass.StoreCard.HeaderFields)
 	}
 	if len(pass.StoreCard.PrimaryFields) != 0 {
 		t.Fatalf("expected primary fields to be omitted, got %+v", pass.StoreCard.PrimaryFields)
@@ -69,6 +66,9 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 	if strings.Contains(string(data), "primaryFields") {
 		t.Fatalf("expected primaryFields to be omitted from pass JSON: %s", data)
 	}
+	if strings.Contains(string(data), "headerFields") {
+		t.Fatalf("expected headerFields to be omitted from pass JSON: %s", data)
+	}
 	if _, ok := fieldByKey(pass.StoreCard.BackFields, "programme_name"); ok {
 		t.Fatal("expected the duplicate programme details field to be omitted")
 	}
@@ -79,10 +79,10 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 		t.Fatalf("expected one next reward field, got %d", len(pass.StoreCard.SecondaryFields))
 	}
 	nextReward := pass.StoreCard.SecondaryFields[0]
-	if nextReward.Label != "Next Reward" || nextReward.Value != "Free Coffee" {
+	if nextReward.Label != "Next Reward" || nextReward.Value != "6 stamps away" {
 		t.Fatalf("unexpected next reward field: %+v", nextReward)
 	}
-	if nextReward.ChangeMessage != "Your next reward is now %@." {
+	if nextReward.ChangeMessage != "Your next reward is %@." {
 		t.Fatalf("unexpected next reward change message: %q", nextReward.ChangeMessage)
 	}
 	if len(pass.StoreCard.AuxiliaryFields) != 0 {
@@ -115,6 +115,29 @@ func TestNewStampCardPassUsesMerchantDesignAndCleanFront(t *testing.T) {
 	}
 	if _, ok := fieldByKey(pass.StoreCard.BackFields, "member"); ok {
 		t.Fatal("expected member name to be omitted from pass fields")
+	}
+}
+
+func TestNextRewardProgress(t *testing.T) {
+	tests := []struct {
+		name  string
+		count int
+		goal  int
+		want  string
+	}{
+		{name: "zero progress", count: 0, goal: 10, want: "10 stamps away"},
+		{name: "partial progress", count: 3, goal: 10, want: "7 stamps away"},
+		{name: "one remaining", count: 9, goal: 10, want: "1 stamp away"},
+		{name: "complete", count: 10, goal: 10, want: "ready to claim"},
+		{name: "above goal", count: 11, goal: 10, want: "ready to claim"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := nextRewardProgress(test.count, test.goal); got != test.want {
+				t.Fatalf("nextRewardProgress(%d, %d) = %q, want %q", test.count, test.goal, got, test.want)
+			}
+		})
 	}
 }
 

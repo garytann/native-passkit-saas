@@ -826,9 +826,6 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
     .logo-placeholder {
       background: #fff;
     }
-    .header-field {
-      text-align: right;
-    }
     .label {
       {{.LabelColorDeclaration}}
       font-size: 10px;
@@ -930,12 +927,6 @@ var previewTemplate = template.Must(template.New("pass-preview").Parse(`<!doctyp
         <img class="logo" src="data:image/png;base64,{{.LogoBase64}}" alt="Merchant logo">
         {{else}}
         <div class="logo logo-placeholder" aria-label="Merchant logo placeholder"></div>
-        {{end}}
-        {{with index .Pass.StoreCard.HeaderFields 0}}
-        <div class="header-field">
-          <div class="label">{{.Label}}</div>
-          <div class="value">{{.Value}}</div>
-        </div>
         {{end}}
       </div>
 	  {{if .StripBase64}}

@@ -53,7 +53,7 @@ export default function StampArtworkPicker({ value, onChange, logoFile, customFi
       {value === "logo" ? <p className="stamp-source-note">Uses the merchant&apos;s <code>icon@3x.png</code>. A transparent 114 × 114 px icon gives the cleanest result inside the white stamp circle.</p> : null}
 
       <StampRowPreview iconKey={value} sourceFile={value === "custom" ? customFile : logoFile} sourceURL={sourceURL} goal={goal} progress={progress} />
-      <p className="stamp-picker-note">Use artwork with strong contrast against white. Visual stamps supplement the numeric counter and may not appear on Apple Watch or every Wallet layout.</p>
+      <p className="stamp-picker-note">Use artwork with strong contrast against white. Visual stamps supplement the remaining-stamps field and may not appear on Apple Watch or every Wallet layout.</p>
     </div>
   );
 }
@@ -95,7 +95,7 @@ export function StampRowPreview({ iconKey, sourceFile, sourceURL = "", goal = 10
             })}
           </span>
         );
-      }) : <p>{visualGoal > 10 ? "Goals above 10 use the numeric stamp counter." : "The pass will use its numeric stamp counter only."}</p>}
+      }) : <p>{visualGoal > 10 ? "Goals above 10 use the remaining-stamps field." : "The pass will use its remaining-stamps field only."}</p>}
     </div>
   );
 }

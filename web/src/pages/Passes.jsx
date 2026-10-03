@@ -169,6 +169,7 @@ export default function PassesPage({ session }) {
 
   const links = useMemo(() => linksFromForm(form), [form]);
   const previewProgress = Math.min(6, Number(form.stampGoal) || 0);
+  const previewRewardProgress = nextRewardProgress(previewProgress, form.stampGoal);
   const update = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }));
   const toggleCampaignFront = (event) => setForm((current) => ({ ...current, showCampaignOnFront: event.target.checked }));
 
@@ -254,12 +255,11 @@ export default function PassesPage({ session }) {
           <aside className="pass-details-preview" aria-label="Apple Wallet pass preview">
             <div className="preview-title"><Smartphone size={20} /><div><span>Pass preview</span><small>{passTypeIdentifier}</small></div></div>
             <div className="wallet-front-sheet">
-              <div className="wallet-front-header"><span>Stamps</span><strong>{previewProgress} / {form.stampGoal}</strong></div>
               <div className="wallet-front-strip">
                 <StampRowPreview iconKey={stampIconKey} sourceFile={stampIconFile} sourceURL={stampArtworkURL} goal={form.stampGoal} progress={previewProgress} />
               </div>
               <div className={`wallet-front-supporting ${form.showCampaignOnFront ? "with-promotion" : ""}`}>
-                <div className="wallet-front-secondary"><span>Next Reward</span><strong>{form.rewardTitle || "Loyalty Reward"}</strong></div>
+                <div className="wallet-front-secondary"><span>Next Reward</span><strong>{previewRewardProgress}</strong></div>
                 {form.showCampaignOnFront ? (
                   <div className="wallet-front-auxiliary"><span>Latest Promotion</span><strong>Campaign title from Campaigns</strong></div>
                 ) : null}
@@ -299,6 +299,14 @@ function PreviewItem({ label, value, muted, link }) {
       <p>{value || "Not provided"}{link && value ? <ExternalLink size={13} /> : null}</p>
     </div>
   );
+}
+
+function nextRewardProgress(progress, goal) {
+  const normalizedGoal = Math.max(Number(goal) || 10, 1);
+  const remaining = Math.max(normalizedGoal - Math.max(Number(progress) || 0, 0), 0);
+  if (remaining === 0) return "ready to claim";
+  if (remaining === 1) return "1 stamp away";
+  return `${remaining} stamps away`;
 }
 
 function formFromDesign(design) {

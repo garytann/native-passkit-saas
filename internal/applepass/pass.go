@@ -150,20 +150,12 @@ func NewStampCardPass(cfg TemplateConfig, design StampCardDesign, member StampCa
 		Barcodes:           []Barcode{barcode},
 		Barcode:            &barcode,
 		StoreCard: &PassStructure{
-			HeaderFields: []Field{
-				{
-					Key:           "stamps",
-					Label:         "Stamps",
-					Value:         stampProgress(member.StampCount, member.StampGoal),
-					ChangeMessage: "Your stamp progress is now %@.",
-				},
-			},
 			SecondaryFields: []Field{
 				{
 					Key:           "next_reward",
 					Label:         "Next Reward",
-					Value:         design.RewardTitle,
-					ChangeMessage: "Your next reward is now %@.",
+					Value:         nextRewardProgress(member.StampCount, member.StampGoal),
+					ChangeMessage: "Your next reward is %@.",
 				},
 			},
 			AuxiliaryFields: auxiliaryFields,
@@ -273,6 +265,17 @@ func loyaltyProgramName(member StampCardMember) string {
 
 func stampProgress(count int, goal int) string {
 	return fmt.Sprintf("%d / %d", count, goal)
+}
+
+func nextRewardProgress(count int, goal int) string {
+	remaining := goal - count
+	if remaining <= 0 {
+		return "ready to claim"
+	}
+	if remaining == 1 {
+		return "1 stamp away"
+	}
+	return fmt.Sprintf("%d stamps away", remaining)
 }
 
 func rewardProgress(count int, goal int) string {
