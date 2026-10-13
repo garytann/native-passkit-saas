@@ -38,3 +38,7 @@ services:
 
 volumes:
   postgres_data:
+
+secrets:
+  google_wallet_service_account:
+    file: ${GOOGLE_WALLET_CREDENTIALS_FILE:-./google-credentials/disabled.json}

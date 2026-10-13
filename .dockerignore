@@ -1,6 +1,6 @@
 .git
 .gocache
-.env
+.env*
 tmp
 dist
 *.pkpass
@@ -18,3 +18,7 @@ pass-assets/*
 proxy/certs/*
 !proxy/certs/.gitkeep
 !proxy/certs/README.md
+
+google-credentials/*
+!google-credentials/disabled.json
+!google-credentials/README.md
