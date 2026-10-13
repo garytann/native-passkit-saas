@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  WalletCards,
   X,
 } from "lucide-react";
 import BrandLogo from "../components/BrandLogo.jsx";
@@ -24,6 +25,7 @@ const steps = [
   { key: "certificate", label: "Certificate", icon: FileKey2 },
   { key: "design", label: "Pass design", icon: ImageUp },
   { key: "activate", label: "Review & activate", icon: BadgeCheck },
+  { key: "google", label: "Google Wallet", icon: WalletCards },
 ];
 
 const assetNames = ["icon.png", "icon@2x.png", "icon@3x.png", "logo.png", "logo@2x.png", "logo@3x.png"];
@@ -33,6 +35,7 @@ export default function AdminConsolePage() {
   const [merchants, setMerchants] = useState([]);
   const [selectedID, setSelectedID] = useState("");
   const [onboarding, setOnboarding] = useState(null);
+  const [googleWallet, setGoogleWallet] = useState(null);
   const [activeStep, setActiveStep] = useState("payment");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("loading");
@@ -60,7 +63,10 @@ export default function AdminConsolePage() {
   }, [session]);
 
   useEffect(() => {
-    if (session?.token && selectedID) loadOnboarding(selectedID, session.token);
+    if (session?.token && selectedID) {
+      loadOnboarding(selectedID, session.token);
+      loadGoogleWallet(selectedID, session.token);
+    }
   }, [selectedID, session]);
 
   async function api(path, options = {}) {
@@ -105,12 +111,25 @@ export default function AdminConsolePage() {
     }
   }
 
+  async function loadGoogleWallet(merchantID = selectedID, token = session?.token) {
+    try {
+      const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/admin/merchants/${encodeURIComponent(merchantID)}/google-wallet`, { headers: { Authorization: `Bearer ${token}` } });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error ?? `Google Wallet status returned ${response.status}`);
+      setGoogleWallet(payload);
+    } catch (error) {
+      setGoogleWallet(null);
+      setMessage(error instanceof Error ? error.message : "Unable to load Google Wallet status");
+    }
+  }
+
   async function runAction(action, successMessage) {
     setStatus("saving");
     setMessage("");
     try {
       await action();
       await loadOnboarding();
+      await loadGoogleWallet();
       await loadMerchants();
       setMessage(successMessage);
       setStatus("ready");
@@ -179,7 +198,7 @@ export default function AdminConsolePage() {
 
             <nav className="onboarding-stepper" aria-label="Onboarding steps">
               {steps.map((step, index) => {
-                const complete = stepComplete(step.key, onboarding);
+                const complete = stepComplete(step.key, onboarding, googleWallet);
                 const Icon = step.icon;
                 return (
                   <button key={step.key} type="button" className={`${activeStep === step.key ? "active" : ""} ${complete ? "complete" : ""}`} onClick={() => setActiveStep(step.key)}>
@@ -233,6 +252,10 @@ export default function AdminConsolePage() {
                 });
               }, "Pass artwork and design saved.")} /> : null}
               {activeStep === "activate" ? <ActivationStep onboarding={onboarding} busy={status === "saving"} onActivate={() => runAction(() => api(`/admin/merchants/${selectedID}/apple-wallet/activate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pass_type_identifier: onboarding.pass_type?.pass_type_identifier }) }), "Merchant Apple Wallet issuance is active.")} /> : null}
+              {activeStep === "google" ? <GoogleWalletStep configuration={googleWallet} busy={status === "saving"} paymentComplete={onboarding.payment_complete} onUpload={(programLogo, wideLogo) => runAction(async () => {
+                const form = new FormData(); form.append("program_logo", programLogo); if (wideLogo) form.append("wide_logo", wideLogo);
+                await api(`/admin/merchants/${selectedID}/google-wallet/assets`, { method: "PUT", body: form });
+              }, "Google Wallet artwork saved.")} onProvision={() => runAction(() => api(`/admin/merchants/${selectedID}/google-wallet/provision`, { method: "POST" }), "Google Wallet class submitted for review.")} onActivate={() => runAction(() => api(`/admin/merchants/${selectedID}/google-wallet/activate`, { method: "POST" }), "Merchant Google Wallet issuance is active.")} /> : null}
             </section>
             {message ? <p className={`admin-message ${status === "error" ? "error" : ""}`}>{message}</p> : null}
           </>
@@ -284,7 +307,7 @@ function DesignStep({ onboarding, busy, onSave }) {
   const update = (field) => (event) => setValues((current) => ({ ...current, [field]: event.target.value }));
 
   return (
-    <StepShell eyebrow="Wallet appearance" title="Upload artwork and define the pass" description="The same validated artwork and information are used for both the preview and issued Wallet pass.">
+    <StepShell eyebrow="Wallet appearance" title="Upload artwork and define the pass" description="Programme rules and customer information are shared across wallets, while each platform keeps its own validated artwork.">
       <form className="onboarding-form design-form" onSubmit={(event) => { event.preventDefault(); onSave(values, completeFiles || files["stamp.png"] ? files : null); }}>
         <Field label="Program name"><input value={values.programName} onChange={update("programName")} required /></Field>
         <Field label="Stamp goal"><input type="number" min="1" max="100" value={values.stampGoal} onChange={update("stampGoal")} readOnly={existing?.status === "active"} required /></Field>
@@ -331,10 +354,66 @@ function ActivationStep({ onboarding, busy, onActivate }) {
   return <StepShell eyebrow="Launch review" title="Activate merchant issuance" description="All checks must pass before this merchant can generate signed Apple Wallet passes."><div className="activation-checks">{checks.map(([label, ready]) => <div key={label} className={ready ? "ready" : "pending"}><span>{ready ? <Check size={15} /> : null}</span><strong>{label}</strong><small>{ready ? "Ready" : "Required"}</small></div>)}</div>{onboarding.onboarding_status === "active" ? <div className="activation-success"><BadgeCheck size={24} /><div><strong>Apple Wallet issuance is active</strong><p>Customers can now receive this merchant's signed loyalty pass.</p></div></div> : <button className="primary-action" type="button" disabled={busy || !onboarding.can_activate} onClick={onActivate}>Activate merchant<BadgeCheck size={18} /></button>}</StepShell>;
 }
 
+function GoogleWalletStep({ configuration, busy, paymentComplete, onUpload, onProvision, onActivate }) {
+  const [programLogo, setProgramLogo] = useState(null);
+  const [wideLogo, setWideLogo] = useState(null);
+  const walletClass = configuration?.class;
+  const enabled = configuration?.enabled;
+  const approved = walletClass?.review_status === "APPROVED";
+  const active = walletClass?.status === "active";
+  const uploadBlockedReason = busy
+    ? "An onboarding request is currently running."
+    : !enabled
+      ? "Enable Google Wallet and restart the backend before uploading artwork."
+      : !paymentComplete
+        ? "Confirm the merchant payment before uploading Google Wallet artwork."
+        : !programLogo
+          ? "Choose a square PNG programme logo to continue."
+          : "";
+  const provisionBlockedReason = busy
+    ? "An onboarding request is currently running."
+    : !enabled
+      ? "Enable Google Wallet and restart the backend before provisioning a class."
+      : !paymentComplete
+        ? "Confirm the merchant payment before provisioning a class."
+        : !configuration?.program_logo_uploaded
+          ? "Upload a valid programme logo before provisioning the loyalty class."
+          : "";
+
+  return (
+    <StepShell eyebrow="Android distribution" title="Configure Google Wallet" description="Google Wallet uses the platform issuer and one merchant-specific loyalty class. No merchant certificate is required.">
+      {!enabled ? <div className="google-wallet-disabled"><ShieldCheck size={21} /><div><strong>Google Wallet is disabled</strong><p>Set the Google issuer ID, mount the service-account secret, and enable Google Wallet for this environment.</p></div></div> : null}
+      <div className="google-wallet-status-grid">
+        <StatusItem label="Programme logo" value={configuration?.program_logo_uploaded ? "Uploaded" : "Required"} ready={configuration?.program_logo_uploaded} />
+        <StatusItem label="Class review" value={walletClass?.review_status || "Not provisioned"} ready={approved} />
+        <StatusItem label="Issuance" value={active ? "Active" : "Inactive"} ready={active} />
+      </div>
+      {walletClass?.google_class_id ? <div className="google-class-reference"><span>Google class ID</span><code>{walletClass.google_class_id}</code>{walletClass.last_error ? <p>{walletClass.last_error}</p> : null}</div> : null}
+      <form className="onboarding-form upload-form" onSubmit={(event) => { event.preventDefault(); onUpload(programLogo, wideLogo); }}>
+        <FileField label="Programme logo" hint={configuration?.program_logo_uploaded ? "Uploaded - choose a PNG to replace" : "Square PNG, at least 660 x 660 px"} accept="image/png" onChange={setProgramLogo} required={!configuration?.program_logo_uploaded} />
+        <FileField label="Wide logo (optional)" hint={configuration?.wide_logo_uploaded ? "Uploaded - choose a PNG to replace" : "PNG, at least 1280 x 400 px"} accept="image/png" onChange={setWideLogo} required={false} />
+        {programLogo ? <p className="google-wallet-selected-file">Selected: <strong>{programLogo.name}</strong></p> : null}
+        <button className="secondary-action" disabled={Boolean(uploadBlockedReason)} title={uploadBlockedReason} type="submit"><ImageUp size={17} />Upload Google artwork</button>
+        {uploadBlockedReason ? <p className="google-wallet-action-help">{uploadBlockedReason}</p> : null}
+      </form>
+      <div className="google-wallet-actions">
+        <button className="primary-action" disabled={Boolean(provisionBlockedReason)} title={provisionBlockedReason} type="button" onClick={onProvision}>{walletClass ? "Synchronize class" : "Provision loyalty class"}<ChevronRight size={17} /></button>
+        <button className="secondary-action" disabled={busy || !approved || active} type="button" onClick={onActivate}>{active ? "Google Wallet active" : "Activate after approval"}<BadgeCheck size={17} /></button>
+      </div>
+      {provisionBlockedReason ? <p className="google-wallet-action-help">{provisionBlockedReason}</p> : null}
+      <p className="google-wallet-note">New issuer accounts remain in Demo Mode and display [TEST ONLY]. Add UAT Google accounts in the Wallet console before testing save links.</p>
+    </StepShell>
+  );
+}
+
+function StatusItem({ label, value, ready }) {
+  return <div className={ready ? "ready" : "pending"}><span>{ready ? <Check size={15} /> : null}</span><strong>{label}</strong><small>{value}</small></div>;
+}
+
 function StepShell({ eyebrow, title, description, children }) { return <div className="step-shell"><header><span className="eyebrow">{eyebrow}</span><h3>{title}</h3><p>{description}</p></header>{children}</div>; }
 function Field({ label, wide, children }) { return <label className={wide ? "wide" : ""}><span>{label}</span>{children}</label>; }
-function FileField({ label, hint, onChange, accept = ".pem" }) { return <label className="file-field"><span>{label}</span><input type="file" accept={accept} onChange={(event) => onChange(event.target.files?.[0] ?? null)} required={hint !== "Already uploaded"} /><small>{hint}</small></label>; }
+function FileField({ label, hint, onChange, accept = ".pem", required = hint !== "Already uploaded" }) { return <label className="file-field"><span>{label}</span><input type="file" accept={accept} onChange={(event) => onChange(event.target.files?.[0] ?? null)} required={required} /><small>{hint}</small></label>; }
 function ColorField({ label, value, onChange }) { return <label className="color-field"><span>{label}</span><div><input type="color" value={value} onChange={(event) => onChange(event.target.value.toUpperCase())} /><input value={value} pattern="#[0-9A-Fa-f]{6}" onChange={(event) => onChange(event.target.value)} /></div></label>; }
 function statusLabel(value) { return ({ awaiting_payment: "Awaiting payment", needs_issuer: "Issuer required", needs_pass_type: "Pass Type required", needs_certificate: "Certificate required", needs_design: "Design required", ready: "Ready to activate", active: "Active" })[value] ?? "Provisioning"; }
 function firstOpenStep(status) { if (!status.payment_complete) return "payment"; if (!status.issuer_configured || !status.pass_type_configured) return "identity"; if (!status.certificate_validated) return "certificate"; if (!status.design_configured || !status.assets_uploaded) return "design"; return "activate"; }
-function stepComplete(step, status) { return ({ payment: status.payment_complete, identity: status.issuer_configured && status.pass_type_configured, certificate: status.certificate_validated, design: status.design_configured && status.assets_uploaded, activate: status.onboarding_status === "active" })[step]; }
+function stepComplete(step, status, googleWallet) { return ({ payment: status.payment_complete, identity: status.issuer_configured && status.pass_type_configured, certificate: status.certificate_validated, design: status.design_configured && status.assets_uploaded, activate: status.onboarding_status === "active", google: googleWallet?.class?.status === "active" })[step]; }

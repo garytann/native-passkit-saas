@@ -7,7 +7,6 @@ import {
   ChartNoAxesCombined,
   ChevronRight,
   CircleHelp,
-  Download,
   Gauge,
   Gift,
   Home,
@@ -28,6 +27,7 @@ import {
   X,
 } from "lucide-react";
 import BrandLogo from "./components/BrandLogo.jsx";
+import WalletButtons from "./components/WalletButtons.jsx";
 import { API_BASE, API_VERSION_PREFIX, DEFAULT_MERCHANT, MERCHANT_SESSION_KEY } from "./config/api";
 import PassesPage from "./pages/Passes.jsx";
 
@@ -199,7 +199,7 @@ export default function App() {
       return;
     }
     try {
-      const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/merchants/me/apple-wallet/pass-design`, {
+      const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/merchants/me/loyalty-program`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) {
@@ -632,8 +632,8 @@ function MetricCard({ label, value, delta, icon: Icon }) {
 
 function PassGenerator({ registration, setRegistration, previewUrl, passLinks, status, error, session, onRegister }) {
   const activePreviewUrl = passLinks?.preview_url ?? previewUrl;
-  const passUrl = passLinks?.pass_url ?? "";
   const createdMember = passLinks?.member;
+  const appleAvailable = Boolean(passLinks?.wallet_links?.apple?.url || passLinks?.pass_url);
   const signupLink = merchantSignupLink(session?.merchant);
 
   function updateRegistration(field, value) {
@@ -644,7 +644,7 @@ function PassGenerator({ registration, setRegistration, previewUrl, passLinks, s
     <article className="generator-panel">
       <div className="panel-heading">
         <div>
-          <span className="eyebrow">Apple Wallet</span>
+          <span className="eyebrow">Digital Wallet</span>
           <h2>Register customer</h2>
         </div>
         <button className="icon-button compact" aria-label="Pass actions" title="Pass actions">
@@ -700,7 +700,7 @@ function PassGenerator({ registration, setRegistration, previewUrl, passLinks, s
               <h3>{createdMember ? "Customer pass is ready" : "Generate a customer pass"}</h3>
               <p>
                 {createdMember
-                  ? "Use the links below to open the browser preview or download the signed Apple Wallet pass."
+                  ? "Use the available wallet buttons below to add the customer's loyalty card."
                   : "Register a customer to create their member record and wallet pass links."}
               </p>
             </div>
@@ -719,14 +719,11 @@ function PassGenerator({ registration, setRegistration, previewUrl, passLinks, s
             )}
 
             <div className="generator-actions">
-              <a className={`secondary-action ${createdMember ? "" : "disabled"}`} href={createdMember ? activePreviewUrl : undefined} target="_blank" rel="noreferrer">
+              {createdMember ? <WalletButtons walletLinks={passLinks?.wallet_links} appleFallback={passLinks?.pass_url} /> : null}
+              {appleAvailable ? <a className="secondary-action" href={activePreviewUrl} target="_blank" rel="noreferrer">
                 <WalletCards size={17} />
-                Open Preview
-              </a>
-              <a className={`secondary-action ${passUrl ? "" : "disabled"}`} href={passUrl || undefined} target="_blank" rel="noreferrer">
-                <Download size={17} />
-                Download .pkpass
-              </a>
+                Apple Preview
+              </a> : null}
             </div>
           </aside>
         </section>

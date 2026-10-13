@@ -469,6 +469,34 @@
   white-space: nowrap;
 }
 
+.wallet-preview-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0 8px 8px;
+  padding: 4px;
+  border-radius: 7px;
+  background: #252832;
+}
+
+.wallet-preview-tabs button {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 5px;
+  color: #aeb3bd;
+  background: transparent;
+  cursor: pointer;
+}
+
+.wallet-preview-tabs button.active {
+  color: #181a20;
+  background: #fff;
+}
+
 .wallet-front-sheet {
   display: grid;
   min-height: 330px;
@@ -589,6 +617,126 @@
 .wallet-preview-item.muted p {
   color: #d4cff7;
   font-style: italic;
+}
+
+.google-pass-preview {
+  display: grid;
+  gap: 18px;
+  margin: 0 8px 8px;
+  padding: 20px;
+  border-radius: 7px;
+  color: #1f2229;
+  background: #fff;
+}
+
+.google-pass-heading {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.google-pass-heading > div:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.google-pass-heading strong {
+  overflow-wrap: anywhere;
+  font-size: 17px;
+}
+
+.google-pass-heading span,
+.google-pass-balances span,
+.google-pass-next span,
+.google-pass-barcode small {
+  color: #717783;
+  font-size: 11px;
+}
+
+.google-pass-logo {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--brand-purple);
+}
+
+.google-pass-hero {
+  min-height: 180px;
+  display: grid;
+  align-content: center;
+  padding: 10px;
+  border-radius: 7px;
+  background: var(--brand-purple);
+}
+
+.google-pass-hero .stamp-row-preview {
+  padding: 0;
+  background: transparent;
+}
+
+.google-pass-hero .stamp-row-preview.numeric-only {
+  color: #fff;
+  background: transparent;
+}
+
+.google-pass-hero .stamp-row-preview.numeric-only p {
+  color: #fff;
+}
+
+.google-pass-balances {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.google-pass-balances > div,
+.google-pass-next {
+  display: grid;
+  gap: 4px;
+}
+
+.google-pass-balances strong {
+  font-size: 26px;
+}
+
+.google-pass-next {
+  padding-top: 14px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.google-pass-next strong {
+  font-size: 16px;
+}
+
+.google-pass-barcode {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  padding-top: 10px;
+}
+
+.google-pass-barcode > span {
+  width: 78px;
+  height: 78px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  padding: 8px;
+  border: 5px solid #17191f;
+}
+
+.google-pass-barcode > span > span {
+  background: #17191f;
+}
+
+.google-pass-barcode > span > span:nth-child(2) {
+  align-self: end;
+  height: 60%;
 }
 
 @media (max-width: 1180px) {
@@ -909,7 +1057,7 @@
 
 .onboarding-stepper {
   display: grid;
-  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
   gap: 1px;
   overflow-x: auto;
   border: 1px solid #dfe4ec;
@@ -1000,6 +1148,124 @@
   border: 1px solid #dfe4ec;
   border-radius: 8px;
   background: #f8fafc;
+}
+
+.google-wallet-disabled {
+  max-width: 680px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 16px;
+  border: 1px solid #ead7a4;
+  border-radius: 8px;
+  color: #6e531d;
+  background: #fff9e9;
+}
+
+.google-wallet-disabled p,
+.google-wallet-note,
+.google-class-reference p {
+  margin-top: 4px;
+  color: #727a88;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.google-wallet-selected-file,
+.google-wallet-action-help {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.google-wallet-selected-file {
+  color: #475166;
+  overflow-wrap: anywhere;
+}
+
+.google-wallet-action-help {
+  color: #7b5512;
+}
+
+.google-wallet-status-grid {
+  max-width: 760px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.google-wallet-status-grid > div {
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: center;
+  gap: 2px 9px;
+  padding: 12px;
+  border: 1px solid #e0e4eb;
+  border-radius: 8px;
+  background: #fafbfd;
+}
+
+.google-wallet-status-grid > div > span {
+  grid-row: 1 / 3;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #e8ebf0;
+}
+
+.google-wallet-status-grid .ready > span {
+  color: #fff;
+  background: #2aa77d;
+}
+
+.google-wallet-status-grid small {
+  color: #818997;
+  overflow-wrap: anywhere;
+}
+
+.google-class-reference {
+  max-width: 760px;
+  display: grid;
+  gap: 6px;
+  margin-bottom: 20px;
+  padding: 13px 14px;
+  border-left: 3px solid var(--brand-purple);
+  background: #f7f6ff;
+}
+
+.google-class-reference span {
+  color: #727a88;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.google-class-reference code {
+  color: #302866;
+  overflow-wrap: anywhere;
+}
+
+.google-wallet-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.google-wallet-actions .primary-action,
+.google-wallet-actions .secondary-action {
+  width: fit-content;
+}
+
+.google-wallet-note {
+  max-width: 720px;
+  margin-top: 16px;
 }
 
 .payment-summary p,
@@ -1320,7 +1586,7 @@
   }
 
   .onboarding-stepper {
-    grid-template-columns: repeat(5, 116px);
+    grid-template-columns: repeat(6, 116px);
   }
 
   .onboarding-stepper button {
@@ -1335,7 +1601,8 @@
   .onboarding-form,
   .color-fields,
   .asset-file-grid,
-  .activation-checks {
+  .activation-checks,
+  .google-wallet-status-grid {
     grid-template-columns: 1fr;
   }
 
@@ -2819,6 +3086,41 @@ textarea:focus {
   display: grid;
   gap: 10px;
   margin-top: 8px;
+}
+
+.wallet-actions {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.wallet-actions .apple-wallet-action {
+  width: auto;
+  min-height: 44px;
+}
+
+.google-wallet-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.google-wallet-action img {
+  display: block;
+  width: 226px;
+  height: 40px;
+  object-fit: contain;
+}
+
+.success-actions > .wallet-actions {
+  display: grid;
+}
+
+.success-actions .apple-wallet-action,
+.success-actions .google-wallet-action {
+  justify-content: center;
 }
 
 .bars {

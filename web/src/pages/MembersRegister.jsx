@@ -2,9 +2,9 @@ import React, { useState } from "react";
 import {
   ArrowRight,
   Check,
-  WalletCards,
 } from "lucide-react";
 import BrandLogo from "../components/BrandLogo.jsx";
+import WalletButtons from "../components/WalletButtons.jsx";
 import { API_BASE, API_VERSION_PREFIX, DEFAULT_MERCHANT, SAAS_BRAND_NAME } from "../config/api";
 
 export default function MembersRegisterPage({ merchantSlug = "" }) {
@@ -154,6 +154,7 @@ function merchantNameFromSlug(slug) {
 
 function SuccessPanel({ passLinks }) {
   const member = passLinks.member;
+  const appleAvailable = Boolean(passLinks.wallet_links?.apple?.url || passLinks.pass_url);
 
   return (
     <div className="success-panel">
@@ -167,13 +168,8 @@ function SuccessPanel({ passLinks }) {
       </p>
 
       <div className="success-actions">
-        <a className="primary-action" href={passLinks.pass_url}>
-          <WalletCards size={18} />
-          Add to Apple Wallet
-        </a>
-        <a className="secondary-action" href={passLinks.preview_url} target="_blank" rel="noreferrer">
-          Open Preview
-        </a>
+        <WalletButtons walletLinks={passLinks.wallet_links} appleFallback={passLinks.pass_url} />
+        {appleAvailable ? <a className="secondary-action" href={passLinks.preview_url} target="_blank" rel="noreferrer">Apple Preview</a> : null}
       </div>
     </div>
   );

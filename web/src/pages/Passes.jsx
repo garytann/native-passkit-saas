@@ -6,6 +6,7 @@ import {
   RefreshCw,
   Save,
   Smartphone,
+  WalletCards,
 } from "lucide-react";
 import { API_BASE, API_VERSION_PREFIX } from "../config/api.js";
 import StampArtworkPicker, { StampRowPreview } from "../components/StampArtworkPicker.jsx";
@@ -34,6 +35,7 @@ export default function PassesPage({ session }) {
   const [stampIconFile, setStampIconFile] = useState(null);
   const [stampArtworkURL, setStampArtworkURL] = useState("");
   const [stampStatus, setStampStatus] = useState("idle");
+  const [previewPlatform, setPreviewPlatform] = useState("apple");
   const stampArtworkRequest = useRef(0);
 
   useEffect(() => {
@@ -45,7 +47,7 @@ export default function PassesPage({ session }) {
   }, [stampArtworkURL]);
 
   async function request(options = {}) {
-    const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/merchants/me/apple-wallet/pass-design`, {
+    const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/merchants/me/loyalty-program`, {
       ...options,
       headers: {
         Authorization: `Bearer ${session.token}`,
@@ -83,7 +85,7 @@ export default function PassesPage({ session }) {
       return;
     }
     try {
-      const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/merchants/me/apple-wallet/stamp-icon?source=${encodeURIComponent(source)}`, {
+      const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/merchants/me/loyalty-program/stamp-icon?source=${encodeURIComponent(source)}`, {
         headers: { Authorization: `Bearer ${session.token}` },
       });
       if (!response.ok) throw new Error("stamp artwork is unavailable");
@@ -115,7 +117,7 @@ export default function PassesPage({ session }) {
       const body = new FormData();
       body.append("stamp_icon_key", stampIconKey);
       if (stampIconFile) body.append("stamp_icon", stampIconFile);
-      const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/merchants/me/apple-wallet/stamp-icon`, {
+      const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/merchants/me/loyalty-program/stamp-icon`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${session.token}` },
         body,
@@ -177,9 +179,9 @@ export default function PassesPage({ session }) {
     <div className="passes-page">
       <section className="passes-heading">
         <div>
-          <span className="eyebrow">Apple Wallet</span>
-          <h1>Pass information</h1>
-          <p>Manage the details customers see when they open the information view on your loyalty pass.</p>
+          <span className="eyebrow">Digital wallets</span>
+          <h1>Loyalty programme</h1>
+          <p>Manage the shared programme details interpreted by Apple Wallet and Google Wallet.</p>
         </div>
         <div className="pass-version">
           <BadgeCheck size={18} />
@@ -243,7 +245,7 @@ export default function PassesPage({ session }) {
             </PassFormSection>
 
             <div className="pass-publish-bar">
-              <div><strong>Publish to Apple Wallet</strong><span>Installed passes will be queued for a background refresh.</span></div>
+              <div><strong>Publish wallet programme</strong><span>Active Apple and Google passes will be queued for a background refresh.</span></div>
               <button className="primary-action" type="submit" disabled={status === "saving"}>
                 {status === "saving" ? <RefreshCw className="spin" size={18} /> : <Save size={18} />}
                 {status === "saving" ? "Publishing" : "Save and publish"}
@@ -252,36 +254,46 @@ export default function PassesPage({ session }) {
             {message ? <p className={`passes-message ${status === "error" || stampStatus === "error" ? "error" : ""}`}>{message}</p> : null}
           </form>
 
-          <aside className="pass-details-preview" aria-label="Apple Wallet pass preview">
-            <div className="preview-title"><Smartphone size={20} /><div><span>Pass preview</span><small>{passTypeIdentifier}</small></div></div>
-            <div className="wallet-front-sheet">
-              <div className="wallet-front-strip">
-                <StampRowPreview iconKey={stampIconKey} sourceFile={stampIconFile} sourceURL={stampArtworkURL} goal={form.stampGoal} progress={previewProgress} />
-              </div>
-              <div className={`wallet-front-supporting ${form.showCampaignOnFront ? "with-promotion" : ""}`}>
-                <div className="wallet-front-secondary"><span>Next Reward</span><strong>{previewRewardProgress}</strong></div>
-                {form.showCampaignOnFront ? (
-                  <div className="wallet-front-auxiliary"><span>Latest Promotion</span><strong>Campaign title from Campaigns</strong></div>
-                ) : null}
-              </div>
+          <aside className="pass-details-preview" aria-label="Digital wallet pass preview">
+            <div className="preview-title"><Smartphone size={20} /><div><span>Pass preview</span><small>{previewPlatform === "apple" ? passTypeIdentifier : "Google loyalty card"}</small></div></div>
+            <div className="wallet-preview-tabs" role="tablist" aria-label="Wallet platform preview">
+              <button type="button" className={previewPlatform === "apple" ? "active" : ""} onClick={() => setPreviewPlatform("apple")}><Smartphone size={15} />Apple</button>
+              <button type="button" className={previewPlatform === "google" ? "active" : ""} onClick={() => setPreviewPlatform("google")}><WalletCards size={15} />Google</button>
             </div>
-            <div className="wallet-preview-divider"><span>Information</span></div>
-            <div className="wallet-details-sheet">
-              <PreviewItem label="Latest Promotion" value="Managed from Campaigns" muted />
-              <PreviewItem label="How to Collect Stamps" value={form.stampInstructions} />
-              <PreviewItem label="Reward Details" value={form.rewardDetails} />
-              <PreviewItem label="Rewards Earned" value="Calculated for each member" muted />
-              <PreviewItem label="Stamps Until Next Reward" value="Calculated for each member" muted />
-              {links.map((link) => <PreviewItem key={link.link_type} label={link.label} value={link.url} link />)}
-              <PreviewItem label="Questions? Contact the Merchant" value={form.supportText} />
-              <PreviewItem label="Terms and Conditions" value={form.termsText} />
-              <PreviewItem label="Powered by Just Loyalty" value="www.just-loyalty.com" link />
-            </div>
+            {previewPlatform === "apple" ? (
+              <>
+                <div className="wallet-front-sheet">
+                  <div className="wallet-front-strip">
+                    <StampRowPreview iconKey={stampIconKey} sourceFile={stampIconFile} sourceURL={stampArtworkURL} goal={form.stampGoal} progress={previewProgress} />
+                  </div>
+                  <div className={`wallet-front-supporting ${form.showCampaignOnFront ? "with-promotion" : ""}`}>
+                    <div className="wallet-front-secondary"><span>Next Reward</span><strong>{previewRewardProgress}</strong></div>
+                    {form.showCampaignOnFront ? (
+                      <div className="wallet-front-auxiliary"><span>Latest Promotion</span><strong>Campaign title from Campaigns</strong></div>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="wallet-preview-divider"><span>Information</span></div>
+                <WalletInformation form={form} links={links} />
+              </>
+            ) : (
+              <div className="google-pass-preview">
+                <div className="google-pass-heading"><div className="google-pass-logo"><WalletCards size={21} /></div><div><strong>{form.programName || "Loyalty Card"}</strong><span>Member rewards</span></div></div>
+                <div className="google-pass-hero"><StampRowPreview iconKey={stampIconKey} sourceFile={stampIconFile} sourceURL={stampArtworkURL} goal={form.stampGoal} progress={previewProgress} /></div>
+                <div className="google-pass-balances"><div><span>Stamps</span><strong>{previewProgress}</strong></div><div><span>Rewards</span><strong>0</strong></div></div>
+                <div className="google-pass-next"><span>Next reward</span><strong>{previewRewardProgress}</strong></div>
+                <div className="google-pass-barcode"><span aria-hidden="true"><span /><span /><span /></span><small>Member QR code</small></div>
+              </div>
+            )}
           </aside>
         </div>
       ) : null}
     </div>
   );
+}
+
+function WalletInformation({ form, links }) {
+  return <div className="wallet-details-sheet"><PreviewItem label="Latest Promotion" value="Managed from Campaigns" muted /><PreviewItem label="How to Collect Stamps" value={form.stampInstructions} /><PreviewItem label="Reward Details" value={form.rewardDetails} /><PreviewItem label="Rewards Earned" value="Calculated for each member" muted /><PreviewItem label="Stamps Until Next Reward" value="Calculated for each member" muted />{links.map((link) => <PreviewItem key={link.link_type} label={link.label} value={link.url} link />)}<PreviewItem label="Questions? Contact the Merchant" value={form.supportText} /><PreviewItem label="Terms and Conditions" value={form.termsText} /><PreviewItem label="Powered by Just Loyalty" value="www.just-loyalty.com" link /></div>;
 }
 
 function PassFormSection({ title, description, children }) {
