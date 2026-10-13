@@ -31,7 +31,17 @@ type CampaignService struct {
 	passUpdater         WalletPassUpdater
 	walletRegistrations CampaignWalletRegistrationRepository
 	pushSender          PassUpdateSender
+	campaignNotifier    CampaignWalletNotifier
 	timeout             time.Duration
+}
+
+type CampaignWalletNotifier interface {
+	NotifyCampaign(ctx context.Context, merchant string, campaign domain.Campaign) error
+}
+
+func (s CampaignService) WithCampaignNotifier(notifier CampaignWalletNotifier) CampaignService {
+	s.campaignNotifier = notifier
+	return s
 }
 
 type CreateCampaignRequest struct {
@@ -132,6 +142,11 @@ func (s CampaignService) CreateForMerchant(ctx context.Context, input CreateCamp
 			if err := s.passUpdater.MarkPassUpdated(ctx, delivery.MemberID); err != nil && !errors.Is(err, domain.ErrWalletPassNotFound) {
 				return CreateCampaignResult{}, err
 			}
+		}
+	}
+	if s.campaignNotifier != nil {
+		if err := s.campaignNotifier.NotifyCampaign(ctx, input.Merchant, campaign); err != nil && !errors.Is(err, domain.ErrGoogleWalletNotProvisioned) {
+			return CreateCampaignResult{}, err
 		}
 	}
 

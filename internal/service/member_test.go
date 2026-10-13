@@ -63,6 +63,34 @@ type fakeWalletPassUpdater struct {
 	markCount int
 }
 
+type registrationMemberRepository struct{ fakeMemberRepository }
+
+func (*registrationMemberRepository) Create(_ context.Context, input domain.CreateStoreMemberInput) (domain.StoreMember, error) {
+	return domain.StoreMember{MemberID: input.MemberID, CustomerName: input.CustomerName, CustomerEmail: input.CustomerEmail, Merchant: input.Merchant, Status: "active"}, nil
+}
+
+type fakePassLinker struct{}
+
+func (fakePassLinker) PassURL(memberID string) string {
+	return "https://example.test/apple/" + memberID
+}
+func (fakePassLinker) PreviewURL(memberID string) string {
+	return "https://example.test/preview/" + memberID
+}
+func (fakePassLinker) QRCodeURL(memberID string) string { return "https://example.test/qr/" + memberID }
+
+type fakeRegistrationWallet struct {
+	available bool
+	baseURL   string
+}
+
+func (w fakeRegistrationWallet) AvailableForMerchant(context.Context, string) bool {
+	return w.available
+}
+func (w fakeRegistrationWallet) RegistrationLink(memberID string) string {
+	return w.baseURL + memberID
+}
+
 func (u *fakeWalletPassUpdater) MarkPassUpdated(context.Context, string) error {
 	u.markCount++
 	return nil
@@ -79,6 +107,27 @@ func TestUpdateMemberStampsMapsMerchantMismatchToForbidden(t *testing.T) {
 	})
 	if !errors.Is(err, ErrForbidden) {
 		t.Fatalf("expected forbidden error, got %v", err)
+	}
+}
+
+func TestRegisterMemberReturnsOnlyActiveWalletPlatforms(t *testing.T) {
+	repository := &registrationMemberRepository{}
+	memberService := NewMemberService(repository, fakePassLinker{}).
+		WithAppleRegistrationWallet(fakeRegistrationWallet{available: false}).
+		WithRegistrationWallet(fakeRegistrationWallet{available: true, baseURL: "https://example.test/google/"})
+
+	result, err := memberService.RegisterMember(context.Background(), RegisterMemberInput{Name: "Taylor", Email: "taylor@example.com", Merchant: "Daily Brew"})
+	if err != nil {
+		t.Fatalf("register member: %v", err)
+	}
+	if result.PassURL != "" {
+		t.Fatalf("Apple compatibility URL should be empty for a Google-only merchant, got %q", result.PassURL)
+	}
+	if _, exists := result.WalletLinks["apple"]; exists {
+		t.Fatal("inactive Apple Wallet link should be hidden")
+	}
+	if result.WalletLinks["google"].URL == "" {
+		t.Fatal("active Google Wallet link should be returned")
 	}
 }
 

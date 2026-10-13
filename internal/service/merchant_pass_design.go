@@ -21,11 +21,32 @@ type MerchantPassDesignService struct {
 	walletPasses        PassDesignWalletPassRepository
 	walletRegistrations PassDesignWalletRegistrationRepository
 	pushSender          PassUpdateSender
+	programUpdater      ProgramWalletUpdater
+	sharedPrograms      SharedLoyaltyProgramRepository
+}
+
+type ProgramWalletUpdater interface {
+	MarkProgramUpdated(ctx context.Context, merchantID string) error
+}
+
+type SharedLoyaltyProgramRepository interface {
+	ProgramByMerchantID(ctx context.Context, merchantID string) (domain.LoyaltyProgram, error)
+	UpdateProgram(ctx context.Context, input domain.UpdateLoyaltyProgramInput) (domain.LoyaltyProgram, error)
 }
 
 type MerchantPassDesignResult struct {
 	PassTypeIdentifier string                 `json:"pass_type_identifier"`
 	Design             domain.ApplePassDesign `json:"design"`
+}
+
+func (s MerchantPassDesignService) WithProgramUpdater(updater ProgramWalletUpdater) MerchantPassDesignService {
+	s.programUpdater = updater
+	return s
+}
+
+func (s MerchantPassDesignService) WithSharedPrograms(programs SharedLoyaltyProgramRepository) MerchantPassDesignService {
+	s.sharedPrograms = programs
+	return s
 }
 
 type PublishMerchantPassDesignRequest struct {
@@ -75,6 +96,9 @@ func (s MerchantPassDesignService) Design(ctx context.Context, merchantID string
 	}
 	configuration, err := s.wallet.Configuration(ctx, merchantID)
 	if err != nil {
+		if s.sharedPrograms != nil {
+			return s.sharedDesign(ctx, merchantID)
+		}
 		return MerchantPassDesignResult{}, err
 	}
 	for _, passType := range configuration.PassTypes {
@@ -85,6 +109,9 @@ func (s MerchantPassDesignService) Design(ctx context.Context, merchantID string
 			return MerchantPassDesignResult{PassTypeIdentifier: passType.PassTypeIdentifier, Design: design}, nil
 		}
 	}
+	if s.sharedPrograms != nil {
+		return s.sharedDesign(ctx, merchantID)
+	}
 	return MerchantPassDesignResult{}, domain.ErrAppleWalletNotProvisioned
 }
 
@@ -92,6 +119,9 @@ func (s MerchantPassDesignService) Publish(ctx context.Context, input PublishMer
 	current, err := s.Design(ctx, input.MerchantID)
 	if err != nil {
 		return PublishMerchantPassDesignResult{}, err
+	}
+	if current.PassTypeIdentifier == "" {
+		return s.publishShared(ctx, current, input)
 	}
 	campaignDisplayMode := campaignDisplayModeForPublish(input.CampaignDisplayMode, current.Design.CampaignDisplayMode)
 	stampIconKey := stampIconKeyForPublish(input.StampIconKey, current.Design.StampIconKey)
@@ -121,6 +151,11 @@ func (s MerchantPassDesignService) Publish(ctx context.Context, input PublishMer
 	result := PublishMerchantPassDesignResult{
 		PassTypeIdentifier: current.PassTypeIdentifier,
 		Design:             design,
+	}
+	if s.programUpdater != nil {
+		if err := s.programUpdater.MarkProgramUpdated(ctx, input.MerchantID); err != nil {
+			result.LastError = err.Error()
+		}
 	}
 	if s.walletPasses == nil {
 		return result, nil
@@ -152,10 +187,76 @@ func (s MerchantPassDesignService) Publish(ctx context.Context, input PublishMer
 		}
 		result.PushSentCount++
 	}
-	if result.PushFailedCount == 0 {
-		result.LastError = ""
+	return result, nil
+}
+
+func (s MerchantPassDesignService) sharedDesign(ctx context.Context, merchantID string) (MerchantPassDesignResult, error) {
+	program, err := s.sharedPrograms.ProgramByMerchantID(ctx, merchantID)
+	if err != nil {
+		return MerchantPassDesignResult{}, err
+	}
+	return MerchantPassDesignResult{Design: appleDesignFromProgram(program)}, nil
+}
+
+func (s MerchantPassDesignService) publishShared(ctx context.Context, current MerchantPassDesignResult, input PublishMerchantPassDesignRequest) (PublishMerchantPassDesignResult, error) {
+	validation := UpsertApplePassDesignRequest{
+		MerchantID: input.MerchantID, PassTypeIdentifier: "pass.shared.loyalty",
+		ProgramName: input.ProgramName, PassDescription: input.PassDescription,
+		StampGoal: input.StampGoal, BackgroundColor: current.Design.BackgroundColor,
+		ForegroundColor: "#FFFFFF", LabelColor: "#E1DCFF", AssetBundleRef: current.Design.AssetBundleRef,
+		StampInstructions: input.StampInstructions, RewardTitle: input.RewardTitle,
+		RewardDetails: input.RewardDetails, SupportText: input.SupportText,
+		TermsText: input.TermsText, Links: input.Links,
+		CampaignDisplayMode: campaignDisplayModeForPublish(input.CampaignDisplayMode, current.Design.CampaignDisplayMode),
+		StampIconKey:        stampIconKeyForPublish(input.StampIconKey, current.Design.StampIconKey),
+	}
+	normalizePassDesignRequest(&validation)
+	if err := validatePassDesignRequest(validation); err != nil {
+		return PublishMerchantPassDesignResult{}, err
+	}
+	if current.Design.Status == "active" && validation.StampGoal != current.Design.StampGoal {
+		return PublishMerchantPassDesignResult{}, ValidationError{Message: "stamp_goal cannot be changed after the loyalty programme is active"}
+	}
+	links := make([]domain.UpsertApplePassLinkInput, 0, len(validation.Links))
+	for index, link := range validation.Links {
+		linkID, err := domain.NewApplePassLinkID()
+		if err != nil {
+			return PublishMerchantPassDesignResult{}, err
+		}
+		links = append(links, domain.UpsertApplePassLinkInput{LinkID: linkID, LinkType: link.LinkType, Label: link.Label, URL: link.URL, SortOrder: index})
+	}
+	program, err := s.sharedPrograms.UpdateProgram(ctx, domain.UpdateLoyaltyProgramInput{
+		MerchantID: input.MerchantID, ProgramName: validation.ProgramName,
+		PassDescription: validation.PassDescription, StampGoal: validation.StampGoal,
+		BackgroundColor: validation.BackgroundColor, StampInstructions: validation.StampInstructions,
+		RewardTitle: validation.RewardTitle, RewardDetails: validation.RewardDetails,
+		SupportText: validation.SupportText, TermsText: validation.TermsText,
+		CampaignDisplayMode: validation.CampaignDisplayMode, StampIconKey: validation.StampIconKey,
+		Links: links,
+	})
+	if err != nil {
+		return PublishMerchantPassDesignResult{}, err
+	}
+	result := PublishMerchantPassDesignResult{Design: appleDesignFromProgram(program)}
+	if s.programUpdater != nil {
+		if err := s.programUpdater.MarkProgramUpdated(ctx, input.MerchantID); err != nil {
+			result.LastError = err.Error()
+		}
 	}
 	return result, nil
+}
+
+func appleDesignFromProgram(program domain.LoyaltyProgram) domain.ApplePassDesign {
+	return domain.ApplePassDesign{
+		DesignID: program.ProgramID, ProgramName: program.ProgramName,
+		PassDescription: program.PassDescription, StampGoal: program.StampGoal,
+		BackgroundColor: program.BackgroundColor, ForegroundColor: "#FFFFFF", LabelColor: "#E1DCFF",
+		AssetBundleRef: program.AssetBundleRef, StampInstructions: program.StampInstructions,
+		RewardTitle: program.RewardTitle, RewardDetails: program.RewardDetails,
+		SupportText: program.SupportText, TermsText: program.TermsText, Links: program.Links,
+		CampaignDisplayMode: program.CampaignDisplayMode, StampIconKey: program.StampIconKey,
+		Status: program.Status, Version: program.Version, CreatedAt: program.CreatedAt, UpdatedAt: program.UpdatedAt,
+	}
 }
 
 func (s MerchantPassDesignService) PublishStampIcon(ctx context.Context, input PublishMerchantStampIconRequest) (PublishMerchantPassDesignResult, error) {

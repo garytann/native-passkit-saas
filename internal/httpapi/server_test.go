@@ -224,6 +224,42 @@ func TestMerchantPassDesignRequiresMerchantToken(t *testing.T) {
 	}
 }
 
+func TestSharedLoyaltyProgramRequiresMerchantToken(t *testing.T) {
+	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080"}, nil, nil)
+	routes := server.Routes()
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/merchants/me/loyalty-program", nil)
+	routes.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected shared loyalty programme route to require auth token, got %d", response.Code)
+	}
+}
+
+func TestGoogleWalletSaveRouteIsVersioned(t *testing.T) {
+	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080"}, nil, nil)
+	routes := server.Routes()
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/google-wallet/passes/MBR-ABC12345/save", nil)
+	routes.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected disabled Google Wallet route to return 503, got %d: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestGoogleWalletAdminRouteRequiresAdminToken(t *testing.T) {
+	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080", AdminAPIToken: "admin-secret"}, nil, nil)
+	routes := server.Routes()
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/admin/merchants/MCH-ABC12345/google-wallet", nil)
+	routes.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected Google Wallet admin route to require admin token, got %d", response.Code)
+	}
+}
+
 func TestMerchantStampIconRequiresMerchantToken(t *testing.T) {
 	server := NewServer(config.Config{PublicBaseURL: "http://localhost:8080"}, nil, nil)
 	routes := server.Routes()

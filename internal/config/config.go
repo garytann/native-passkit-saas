@@ -7,49 +7,65 @@ import (
 )
 
 type Config struct {
-	Port                  string
-	DatabaseURL           string
-	PublicBaseURL         string
-	AuthTokenSecret       string
-	AdminAPIToken         string
-	PlatformAdminEmail    string
-	PlatformAdminPassword string
-	CertificateBasePath   string
-	PassAssetBasePath     string
-	PassTypeID            string
-	TeamID                string
-	OrganizationName      string
-	WebServiceURL         string
-	PassCertPath          string
-	PassKeyPath           string
-	WWDRCertPath          string
-	APNSEndpoint          string
-	OpenSSLBin            string
+	Port                      string
+	DatabaseURL               string
+	PublicBaseURL             string
+	AuthTokenSecret           string
+	AdminAPIToken             string
+	PlatformAdminEmail        string
+	PlatformAdminPassword     string
+	CertificateBasePath       string
+	PassAssetBasePath         string
+	PassTypeID                string
+	TeamID                    string
+	OrganizationName          string
+	WebServiceURL             string
+	PassCertPath              string
+	PassKeyPath               string
+	WWDRCertPath              string
+	APNSEndpoint              string
+	OpenSSLBin                string
+	GoogleWalletEnabled       bool
+	GoogleWalletIssuerID      string
+	GoogleCredentialsPath     string
+	GoogleWalletPublicBaseURL string
 }
 
 func Load() Config {
 	_ = loadDotEnv(".env")
 
 	return Config{
-		Port:                  env("PORT", "8080"),
-		DatabaseURL:           env("DATABASE_URL", ""),
-		PublicBaseURL:         env("PUBLIC_BASE_URL", "http://localhost:8080"),
-		AuthTokenSecret:       env("AUTH_TOKEN_SECRET", "dev-only-change-me"),
-		AdminAPIToken:         env("ADMIN_API_TOKEN", ""),
-		PlatformAdminEmail:    env("PLATFORM_ADMIN_EMAIL", ""),
-		PlatformAdminPassword: env("PLATFORM_ADMIN_PASSWORD", ""),
-		CertificateBasePath:   env("APPLE_CERTIFICATE_BASE_PATH", "certs"),
-		PassAssetBasePath:     env("APPLE_PASS_ASSET_BASE_PATH", "pass-assets"),
-		PassTypeID:            env("APPLE_PASS_TYPE_ID", "pass.com.example.membership"),
-		TeamID:                env("APPLE_TEAM_ID", "ABCDE12345"),
-		OrganizationName:      env("APPLE_ORGANIZATION_NAME", "Example Company"),
-		WebServiceURL:         env("APPLE_WEB_SERVICE_URL", ""),
-		PassCertPath:          env("APPLE_PASS_CERT_PATH", "certs/pass-cert.pem"),
-		PassKeyPath:           env("APPLE_PASS_KEY_PATH", "certs/pass-key.pem"),
-		WWDRCertPath:          env("APPLE_WWDR_CERT_PATH", "certs/wwdr.pem"),
-		APNSEndpoint:          env("APPLE_APNS_ENDPOINT", "https://api.push.apple.com"),
-		OpenSSLBin:            env("OPENSSL_BIN", "openssl"),
+		Port:                      env("PORT", "8080"),
+		DatabaseURL:               env("DATABASE_URL", ""),
+		PublicBaseURL:             env("PUBLIC_BASE_URL", "http://localhost:8080"),
+		AuthTokenSecret:           env("AUTH_TOKEN_SECRET", "dev-only-change-me"),
+		AdminAPIToken:             env("ADMIN_API_TOKEN", ""),
+		PlatformAdminEmail:        env("PLATFORM_ADMIN_EMAIL", ""),
+		PlatformAdminPassword:     env("PLATFORM_ADMIN_PASSWORD", ""),
+		CertificateBasePath:       env("APPLE_CERTIFICATE_BASE_PATH", "certs"),
+		PassAssetBasePath:         env("APPLE_PASS_ASSET_BASE_PATH", "pass-assets"),
+		PassTypeID:                env("APPLE_PASS_TYPE_ID", "pass.com.example.membership"),
+		TeamID:                    env("APPLE_TEAM_ID", "ABCDE12345"),
+		OrganizationName:          env("APPLE_ORGANIZATION_NAME", "Example Company"),
+		WebServiceURL:             env("APPLE_WEB_SERVICE_URL", ""),
+		PassCertPath:              env("APPLE_PASS_CERT_PATH", "certs/pass-cert.pem"),
+		PassKeyPath:               env("APPLE_PASS_KEY_PATH", "certs/pass-key.pem"),
+		WWDRCertPath:              env("APPLE_WWDR_CERT_PATH", "certs/wwdr.pem"),
+		APNSEndpoint:              env("APPLE_APNS_ENDPOINT", "https://api.push.apple.com"),
+		OpenSSLBin:                env("OPENSSL_BIN", "openssl"),
+		GoogleWalletEnabled:       envBool("GOOGLE_WALLET_ENABLED", false),
+		GoogleWalletIssuerID:      env("GOOGLE_WALLET_ISSUER_ID", ""),
+		GoogleCredentialsPath:     env("GOOGLE_APPLICATION_CREDENTIALS", ""),
+		GoogleWalletPublicBaseURL: env("GOOGLE_WALLET_PUBLIC_BASE_URL", env("PUBLIC_BASE_URL", "http://localhost:8080")),
 	}
+}
+
+func envBool(key string, fallback bool) bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if value == "" {
+		return fallback
+	}
+	return value == "1" || value == "true" || value == "yes" || value == "on"
 }
 
 func env(key string, fallback string) string {

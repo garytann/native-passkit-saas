@@ -9,6 +9,7 @@ import (
 	"native-ios-passkit-wip/internal/database"
 	"native-ios-passkit-wip/internal/httpapi"
 	"native-ios-passkit-wip/internal/repository"
+	"native-ios-passkit-wip/internal/service"
 )
 
 func NewHTTPHandler(ctx context.Context, cfg config.Config) (http.Handler, func(), error) {
@@ -18,6 +19,7 @@ func NewHTTPHandler(ctx context.Context, cfg config.Config) (http.Handler, func(
 	var walletRegistrationRepo httpapi.WalletRegistrationRepository
 	var walletPassRepo httpapi.WalletPassRepository
 	var appleWalletRepo httpapi.AppleWalletRepository
+	var googleWalletRepo httpapi.GoogleWalletRepository
 	cleanup := func() {}
 
 	if cfg.DatabaseURL == "" {
@@ -42,8 +44,16 @@ func NewHTTPHandler(ctx context.Context, cfg config.Config) (http.Handler, func(
 		walletRegistrationRepo = repository.NewWalletRegistrationRepository(db)
 		walletPassRepo = repository.NewWalletPassRepository(db)
 		appleWalletRepo = repository.NewAppleWalletRepository(db)
+		googleWalletRepo = repository.NewGoogleWalletRepository(db)
 	}
-
-	server := httpapi.NewServerWithAppleWalletRepository(cfg, memberRepo, merchantRepo, campaignRepo, walletRegistrationRepo, walletPassRepo, appleWalletRepo)
+	googleWalletService, err := service.NewGoogleWalletService(ctx, cfg, googleWalletRepo, memberRepo, merchantRepo, campaignRepo)
+	if err != nil {
+		cleanup()
+		return nil, func() {}, err
+	}
+	if googleWalletService.Enabled() {
+		go googleWalletService.RunSyncWorker(ctx)
+	}
+	server := httpapi.NewServerWithAppleWalletRepository(cfg, memberRepo, merchantRepo, campaignRepo, walletRegistrationRepo, walletPassRepo, appleWalletRepo).WithGoogleWalletService(&googleWalletService)
 	return server.Routes(), cleanup, nil
 }

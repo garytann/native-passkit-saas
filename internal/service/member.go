@@ -34,10 +34,25 @@ type RegisterMemberInput struct {
 }
 
 type RegisterMemberResult struct {
-	Member     domain.StoreMember
-	PassURL    string
-	PreviewURL string
-	QRCodeURL  string
+	Member      domain.StoreMember
+	PassURL     string
+	PreviewURL  string
+	QRCodeURL   string
+	WalletLinks map[string]WalletRegistrationLink
+}
+
+type WalletRegistrationLink struct {
+	URL   string `json:"url"`
+	Label string `json:"label"`
+}
+
+type RegistrationWalletAvailability interface {
+	AvailableForMerchant(ctx context.Context, merchant string) bool
+}
+
+type RegistrationWalletProvider interface {
+	RegistrationWalletAvailability
+	RegistrationLink(memberID string) string
 }
 
 type UpdateMemberStampsInput struct {
@@ -87,7 +102,19 @@ type MemberService struct {
 	walletRegistrations CampaignWalletRegistrationRepository
 	pushSender          PassUpdateSender
 	stampGoals          StampGoalProvider
+	appleRegistration   RegistrationWalletAvailability
+	registrationWallet  RegistrationWalletProvider
 	timeout             time.Duration
+}
+
+func (s MemberService) WithRegistrationWallet(provider RegistrationWalletProvider) MemberService {
+	s.registrationWallet = provider
+	return s
+}
+
+func (s MemberService) WithAppleRegistrationWallet(provider RegistrationWalletAvailability) MemberService {
+	s.appleRegistration = provider
+	return s
 }
 
 type MerchantLookupRepository interface {
@@ -158,11 +185,21 @@ func (s MemberService) RegisterMember(ctx context.Context, input RegisterMemberI
 		return RegisterMemberResult{}, fmt.Errorf("register member: %w", err)
 	}
 
+	walletLinks := make(map[string]WalletRegistrationLink, 2)
+	applePassURL := ""
+	if s.appleRegistration == nil || s.appleRegistration.AvailableForMerchant(ctx, member.Merchant) {
+		applePassURL = s.linker.PassURL(member.MemberID)
+		walletLinks["apple"] = WalletRegistrationLink{URL: applePassURL, Label: "Add to Apple Wallet"}
+	}
+	if s.registrationWallet != nil && s.registrationWallet.AvailableForMerchant(ctx, member.Merchant) {
+		walletLinks["google"] = WalletRegistrationLink{URL: s.registrationWallet.RegistrationLink(member.MemberID), Label: "Add to Google Wallet"}
+	}
 	return RegisterMemberResult{
-		Member:     member,
-		PassURL:    s.linker.PassURL(member.MemberID),
-		PreviewURL: s.linker.PreviewURL(member.MemberID),
-		QRCodeURL:  s.linker.QRCodeURL(member.MemberID),
+		Member:      member,
+		PassURL:     applePassURL,
+		PreviewURL:  s.linker.PreviewURL(member.MemberID),
+		QRCodeURL:   s.linker.QRCodeURL(member.MemberID),
+		WalletLinks: walletLinks,
 	}, nil
 }
 

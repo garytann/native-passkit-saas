@@ -56,10 +56,11 @@ type publicRegisterMemberRequest struct {
 }
 
 type registerMemberResponse struct {
-	Member     domain.StoreMember `json:"member"`
-	PassURL    string             `json:"pass_url"`
-	PreviewURL string             `json:"preview_url"`
-	QRCodeURL  string             `json:"qr_code_url"`
+	Member      domain.StoreMember                        `json:"member"`
+	PassURL     string                                    `json:"pass_url"`
+	PreviewURL  string                                    `json:"preview_url"`
+	QRCodeURL   string                                    `json:"qr_code_url"`
+	WalletLinks map[string]service.WalletRegistrationLink `json:"wallet_links"`
 }
 
 type listMembersResponse struct {
@@ -229,10 +230,11 @@ func (c CustomerController) RegisterMember(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusCreated, registerMemberResponse{
-		Member:     result.Member,
-		PassURL:    result.PassURL,
-		PreviewURL: result.PreviewURL,
-		QRCodeURL:  result.QRCodeURL,
+		Member:      result.Member,
+		PassURL:     result.PassURL,
+		PreviewURL:  result.PreviewURL,
+		QRCodeURL:   result.QRCodeURL,
+		WalletLinks: result.WalletLinks,
 	})
 }
 
@@ -315,10 +317,11 @@ func (c CustomerController) RegisterPublicMember(w http.ResponseWriter, r *http.
 	}
 
 	writeJSON(w, http.StatusCreated, registerMemberResponse{
-		Member:     result.Member,
-		PassURL:    result.PassURL,
-		PreviewURL: result.PreviewURL,
-		QRCodeURL:  result.QRCodeURL,
+		Member:      result.Member,
+		PassURL:     result.PassURL,
+		PreviewURL:  result.PreviewURL,
+		QRCodeURL:   result.QRCodeURL,
+		WalletLinks: result.WalletLinks,
 	})
 }
 
@@ -764,6 +767,16 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "apple wallet is not provisioned for merchant")
 	case errors.Is(err, domain.ErrAppleWalletConfigurationConflict):
 		writeError(w, http.StatusConflict, "apple wallet configuration already exists")
+	case errors.Is(err, domain.ErrLoyaltyProgramNotFound):
+		writeError(w, http.StatusNotFound, "loyalty program not found")
+	case errors.Is(err, domain.ErrGoogleWalletClassNotFound):
+		writeError(w, http.StatusNotFound, "google wallet class not found")
+	case errors.Is(err, domain.ErrGoogleWalletObjectNotFound):
+		writeError(w, http.StatusNotFound, "google wallet object not found")
+	case errors.Is(err, domain.ErrGoogleWalletNotProvisioned):
+		writeError(w, http.StatusConflict, "google wallet is not provisioned for merchant")
+	case errors.Is(err, domain.ErrGoogleWalletDisabled):
+		writeError(w, http.StatusServiceUnavailable, "google wallet is disabled")
 	case errors.Is(err, domain.ErrStoreMemberNotFound):
 		writeError(w, http.StatusNotFound, "member not found")
 	case errors.Is(err, domain.ErrMemberInactive):

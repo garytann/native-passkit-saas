@@ -603,6 +603,11 @@ func (s AppleWalletService) ResolveActiveByMerchant(ctx context.Context, merchan
 	return s.repo.ResolveActiveByMerchant(ctx, strings.TrimSpace(merchant))
 }
 
+func (s AppleWalletService) AvailableForMerchant(ctx context.Context, merchant string) bool {
+	_, err := s.ResolveActiveByMerchant(ctx, merchant)
+	return err == nil
+}
+
 func (s AppleWalletService) ResolveActiveByPassType(ctx context.Context, passTypeIdentifier string) (domain.ActiveAppleWalletCredential, error) {
 	if s.repo == nil {
 		return domain.ActiveAppleWalletCredential{}, ErrRepositoryUnavailable
