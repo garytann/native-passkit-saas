@@ -200,7 +200,7 @@ func (s GoogleWalletService) Provision(ctx context.Context, merchantID string) (
 	if !s.Enabled() {
 		return domain.GoogleWalletConfiguration{}, domain.ErrGoogleWalletDisabled
 	}
-	if err := validateGoogleWalletPublicBaseURL(s.googleWalletPublicBaseURL()); err != nil {
+	if err := validateGoogleWalletPublicBaseURL(s.cfg.PublicBaseURL); err != nil {
 		return domain.GoogleWalletConfiguration{}, ValidationError{Message: err.Error()}
 	}
 	program, err := s.EnsureProgram(ctx, merchantID)
@@ -612,27 +612,20 @@ func (s GoogleWalletService) signSaveURL(object *walletobjects.LoyaltyObject) (s
 }
 
 func (s GoogleWalletService) publicAssetURL(program domain.LoyaltyProgram, name string) string {
-	return s.googleWalletPublicBaseURL() + "/api/v1/public/google-wallet/assets/" + url.PathEscape(program.ProgramID) + "/" + name + "?v=" + fmt.Sprint(program.Version)
+	return strings.TrimRight(s.cfg.PublicBaseURL, "/") + "/api/v1/public/google-wallet/assets/" + url.PathEscape(program.ProgramID) + "/" + name + "?v=" + fmt.Sprint(program.Version)
 }
 func (s GoogleWalletService) publicStampURL(object domain.GoogleWalletObject, program domain.LoyaltyProgram, member domain.StoreMember) string {
-	return s.googleWalletPublicBaseURL() + "/api/v1/public/google-wallet/images/" + url.PathEscape(object.ImageToken) + "/stamps.png?v=" + fmt.Sprintf("%d-%d", program.Version, member.StampProgress)
-}
-func (s GoogleWalletService) googleWalletPublicBaseURL() string {
-	baseURL := strings.TrimSpace(s.cfg.GoogleWalletPublicBaseURL)
-	if baseURL == "" {
-		baseURL = s.cfg.PublicBaseURL
-	}
-	return strings.TrimRight(baseURL, "/")
+	return strings.TrimRight(s.cfg.PublicBaseURL, "/") + "/api/v1/public/google-wallet/images/" + url.PathEscape(object.ImageToken) + "/stamps.png?v=" + fmt.Sprintf("%d-%d", program.Version, member.StampProgress)
 }
 func validateGoogleWalletPublicBaseURL(rawURL string) error {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
-		return errors.New("Google Wallet artwork requires a public HTTPS URL; set GOOGLE_WALLET_PUBLIC_BASE_URL to an HTTPS tunnel or deployed domain")
+		return errors.New("Google Wallet artwork requires a public HTTPS URL; set PUBLIC_BASE_URL to an HTTPS tunnel or deployed application domain")
 	}
 	hostname := strings.ToLower(parsed.Hostname())
 	ip := net.ParseIP(hostname)
 	if hostname == "localhost" || strings.HasSuffix(hostname, ".localhost") || (ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified())) {
-		return errors.New("Google Wallet cannot load artwork from localhost or a private address; set GOOGLE_WALLET_PUBLIC_BASE_URL to a public HTTPS tunnel URL")
+		return errors.New("Google Wallet cannot load artwork from localhost or a private address; set PUBLIC_BASE_URL to a public HTTPS tunnel or deployed application domain")
 	}
 	return nil
 }

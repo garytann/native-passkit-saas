@@ -23,3 +23,8 @@ pass-assets/*
 proxy/certs/*
 !proxy/certs/.gitkeep
 !proxy/certs/README.md
+
+# Google service-account JSON keys are signing credentials.
+google-credentials/*
+!google-credentials/disabled.json
+!google-credentials/README.md

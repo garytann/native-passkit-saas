@@ -42,17 +42,6 @@ services:
       - ./proxy/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
       - ./proxy/certs:/etc/nginx/ssl:ro
 
-  google-wallet-assets:
-    image: nginx:1.27-alpine
-    profiles:
-      - local-google-wallet
-    depends_on:
-      - backend
-    ports:
-      - "127.0.0.1:${GOOGLE_WALLET_ASSET_HOST_PORT:-18081}:80"
-    volumes:
-      - ./proxy/nginx.google-wallet-assets.conf:/etc/nginx/conf.d/default.conf:ro
-
 volumes:
   postgres_data:
 

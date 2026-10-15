@@ -21,12 +21,18 @@ Routes are mounted through a single API version group in `internal/httpapi/route
 - `POST /api/v1/merchants/register` - registers a SaaS merchant account.
 - `POST /api/v1/merchants/login` - validates merchant email/password and returns a merchant token.
 - `GET /api/v1/customers/members` - returns members scoped to the authenticated merchant.
+- `GET /api/v1/customers/members/{memberID}` - loads a merchant-scoped member and reward programme state.
 - `POST /api/v1/public/merchants/{merchantSlug}/members/register` - registers a customer from a merchant-owned public signup link.
 - `PUT /api/v1/customers/members/{memberID}/stamps` - updates stamp progress for a member owned by the authenticated merchant.
+- `POST /api/v1/customers/members/{memberID}/rewards/issue` - converts a completed stamp card into an available reward.
+- `POST /api/v1/customers/members/{memberID}/rewards/redeem` - redeems one available reward.
 - `GET /api/v1/apple/passes/example` - returns a sample pass URL.
 - `GET /api/v1/apple/passes/{memberID}/preview` - renders an unsigned browser preview.
 - `GET /api/v1/apple/passes/{memberID}/qr.png` - renders the preview QR code as a PNG.
 - `GET /api/v1/apple/passes/{memberID}.pkpass` - generates and returns a signed Apple Wallet stamp card.
+- `GET /api/v1/google-wallet/passes/{memberID}/save` - lazily provisions a Google Wallet loyalty object and redirects to Google's signed save URL.
+- `GET /api/v1/merchants/me/loyalty-program` - returns the authenticated merchant's shared Apple/Google loyalty programme.
+- `PUT /api/v1/merchants/me/loyalty-program` - publishes shared programme content and queues active wallet updates.
 
 ## Backend Architecture
 
@@ -98,7 +104,7 @@ For Docker deployments, database lifecycle is split into explicit one-off jobs:
 - `db-init` creates the application database once if it does not already exist.
 - `db-migrate` applies SQL files from `migrations/` to the application database.
 
-Run these once when provisioning a new UAT/prod environment:
+Run these once when provisioning a new production environment:
 
 ```sh
 docker compose up -d db
@@ -107,17 +113,49 @@ docker compose --profile db-admin run --rm db-migrate
 docker compose up -d --build
 ```
 
-For normal application deploys after the database already exists:
+For a new UAT environment, select the UAT Compose entry point and environment
+file explicitly:
+
+```sh
+docker compose --env-file .env.uat -f docker-compose.uat.yml up -d db
+docker compose --env-file .env.uat -f docker-compose.uat.yml --profile db-admin run --rm db-init
+docker compose --env-file .env.uat -f docker-compose.uat.yml --profile db-admin run --rm db-migrate
+docker compose --env-file .env.uat -f docker-compose.uat.yml up -d --build
+```
+
+For normal production deploys after the database already exists:
 
 ```sh
 docker compose up -d --build
 ```
 
-When a future release includes schema changes, run the migration job deliberately during the deployment:
+For normal UAT deploys:
+
+```sh
+docker compose --env-file .env.uat -f docker-compose.uat.yml up -d --build
+```
+
+When switching an existing UAT server from the former combined stack, append
+`--remove-orphans` once so Docker removes the old landing container. This does
+not remove the Postgres volume:
+
+```sh
+docker compose --env-file .env.uat -f docker-compose.uat.yml up -d --build --remove-orphans
+```
+
+When a future production release includes schema changes, run the migration
+job deliberately during the deployment:
 
 ```sh
 docker compose --profile db-admin run --rm db-migrate
 docker compose up -d --build
+```
+
+For a UAT release with schema changes:
+
+```sh
+docker compose --env-file .env.uat -f docker-compose.uat.yml --profile db-admin run --rm db-migrate
+docker compose --env-file .env.uat -f docker-compose.uat.yml up -d --build
 ```
 
 Do not use `docker compose down -v` in UAT/prod unless you intentionally want to destroy database data.
@@ -137,6 +175,7 @@ The migration creates `store_members` with:
 - `customer_email`
 - `merchant`
 - `stamp_progress`
+- `available_rewards`
 - `status`
 
 `creation_date`, `stamp_progress`, and `status` are Postgres defaults. The API generates `member_id` as a readable support-friendly ID, for example `MBR-8K4J2QPA`, instead of exposing a long UUID to customers.
@@ -169,25 +208,43 @@ This keeps member profile data separate from promotional state and gives the pla
 
 ## Docker Compose
 
-The easiest way to run the full POC stack is Docker Compose:
+Production is the default Compose environment:
 
 ```sh
 docker compose up --build
 ```
 
-Compose reads required values from `.env`. Start from the example file if you have not created one yet:
+Production reads required values from `.env`. Start from the example file if
+you have not created one yet:
 
 ```sh
 cp .env.example .env
 ```
 
-This starts:
+The Compose files are organized as follows:
+
+- `docker-compose.common.yml` contains the shared database, migration, backend,
+  and web service definitions. Do not run this file directly.
+- `docker-compose.yml` is the production entry point and adds the landing site
+  plus `proxy/nginx.prod.conf`.
+- `docker-compose.uat.yml` is the UAT entry point and adds only
+  `proxy/nginx.uat.conf`; it does not define or build the landing site.
+
+The production entry point starts:
 
 - `db` - Postgres 16, with a persistent named volume.
 - `backend` - Go API inside the Compose network.
 - `web` - React admin console inside the Compose network.
 - `landing` - Static Just Loyalty marketing site inside the Compose network.
 - `proxy` - Nginx reverse proxy on HTTP and HTTPS.
+
+The UAT entry point starts `db`, `backend`, `web`, and `proxy`. Create its
+ignored environment file from the tracked template:
+
+```sh
+cp .env.uat.example .env.uat
+docker compose --env-file .env.uat -f docker-compose.uat.yml up -d --build
+```
 
 Use the proxy URL for both app and API access:
 
@@ -204,17 +261,31 @@ merchant application by hostname:
 - `app.just-loyalty.com` serves the React merchant and business consoles.
 - `/api/v1/...` on the app hostname routes to the Go backend.
 
+UAT uses a single hostname:
+
+- `demo.grayworks.dev` serves the merchant portal, customer registration pages,
+  protected platform console at `/admin`, and `/api/v1/...` backend routes.
+- The public marketing landing site is not part of the UAT service graph.
+
 Create DNS `A` or `AAAA` records for the apex, `www`, and `app` hostnames that
 point to the deployment server. The TLS certificate mounted into the proxy must
 cover `just-loyalty.com`, `www.just-loyalty.com`, and `app.just-loyalty.com`.
 The landing page calls to action already link to the merchant registration and
 login pages on `app.just-loyalty.com`.
 
+For UAT, create an `A` or `AAAA` record for `demo.grayworks.dev` pointing to the
+UAT server. Its TLS certificate only needs to cover `demo.grayworks.dev`.
+
 Set your public domain in `.env`:
 
 ```text
 PUBLIC_BASE_URL=https://your-domain.example
 ```
+
+Use `PUBLIC_BASE_URL=https://app.just-loyalty.com` in production and
+`PUBLIC_BASE_URL=https://demo.grayworks.dev` in UAT. This value is embedded in
+Apple Wallet web-service URLs, so it must identify the application/API host,
+not the production landing-site hostname.
 
 Then place your valid TLS files in:
 
@@ -223,11 +294,33 @@ proxy/certs/fullchain.pem
 proxy/certs/privkey.pem
 ```
 
+Because UAT and production are separate servers, each checkout keeps its own
+environment-specific certificate files at these same paths.
+
 Make sure Docker Desktop is running before starting Compose. If you already have a local Postgres using port `5432`, either stop that local instance or change `POSTGRES_HOST_PORT` in `.env`. If ports `80` or `443` are already used locally, change `PROXY_HOST_PORT` or `PROXY_HTTPS_HOST_PORT` in `.env` and update `PUBLIC_BASE_URL` to match.
 
 For Compose, the backend container gets its `DATABASE_URL` from `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `APP_DATABASE_NAME`, using the internal Docker hostname `db`. The `DATABASE_URL` field in `.env` is kept for the separate case where you run the backend directly from your host with `go run ./cmd/server`.
 
 `POSTGRES_ADMIN_DB` is the database used by the Postgres container healthcheck and admin commands. `APP_DATABASE_NAME` is the application database. Keeping them separate prevents rebuilds from depending on Postgres first-run initialization behavior.
+
+### Deployment rollback
+
+Application rollback uses the same environment-specific Compose command after
+checking out the previous known-good release:
+
+```sh
+# Production
+git checkout <previous-release>
+docker compose up -d --build
+
+# UAT
+git checkout <previous-release>
+docker compose --env-file .env.uat -f docker-compose.uat.yml up -d --build
+```
+
+Do not run `docker compose down -v` during rollback. SQL migrations are treated
+as forward-only; restore a tested database backup only when a release explicitly
+requires a database rollback.
 
 If an existing UAT/prod volume is missing the application database, preserve the volume and run:
 
@@ -362,7 +455,7 @@ Content-Type: application/json
 }
 ```
 
-The API creates a `campaigns` row, queues `campaign_deliveries` for the merchant's current members, and marks any existing `wallet_passes` as updated. If a member has a Wallet registration, the backend sends an APNs pass-update push to the stored `pushToken`. The generated pass includes the active campaign message as a `Promotion` field with `changeMessage`.
+The API creates a `campaigns` row, queues `campaign_deliveries` for the merchant's current members, and marks any existing `wallet_passes` as updated. If a member has a Wallet registration, the backend sends an APNs pass-update push to the stored `pushToken`. Campaign titles are limited to 40 characters. The active campaign message is placed in the `latest_offer` Pass Details field with its `changeMessage`; merchants may also display the short title on the pass front.
 
 Apple Wallet populates `wallet_registrations` after a customer adds a pass. The pass contains `webServiceURL` and `authenticationToken`, then Wallet calls:
 
@@ -422,19 +515,98 @@ Response:
     "customer_email": "taylor@example.com",
     "merchant": "Daily Brew",
     "stamp_progress": 0,
+    "available_rewards": 0,
     "status": "active"
   },
   "pass_url": "http://localhost:8080/api/v1/apple/passes/MBR-8K4J2QPA.pkpass",
   "preview_url": "http://localhost:8080/api/v1/apple/passes/MBR-8K4J2QPA/preview",
-  "qr_code_url": "http://localhost:8080/api/v1/apple/passes/MBR-8K4J2QPA/qr.png"
+  "qr_code_url": "http://localhost:8080/api/v1/apple/passes/MBR-8K4J2QPA/qr.png",
+  "wallet_links": {
+    "apple": { "url": "https://app.example/api/v1/apple/passes/MBR-8K4J2QPA.pkpass", "label": "Add to Apple Wallet" },
+    "google": { "url": "https://app.example/api/v1/google-wallet/passes/MBR-8K4J2QPA/save", "label": "Add to Google Wallet" }
+  }
 }
 ```
 
 The returned pass links render from the registered member record. `customer_name` is shown as the member name, `merchant` is shown as the pass brand, and `stamp_progress` controls the displayed stamps.
 
+`wallet_links` contains only platforms activated for that merchant. `pass_url`
+remains as the Apple compatibility field and is empty for a Google-only
+programme. The registration page orders Google first on Android, Apple first on
+iOS, and shows both on desktop when both platforms are active.
+
+## Google Wallet
+
+Google Wallet uses one Just Loyalty issuer per environment, one merchant class,
+and one member object. It does not use Apple-style per-merchant certificates.
+The environment's Google Cloud service account authenticates REST calls and
+signs short-lived save-link JWTs.
+
+Before enabling it:
+
+1. Create separate UAT and production Google Cloud projects and Wallet issuer accounts.
+2. Enable the Google Wallet API in each project.
+3. Create a service account and add its email as a Developer in the matching Wallet issuer.
+4. Place the downloaded JSON key in `google-credentials/` on that server.
+5. Set `GOOGLE_WALLET_ISSUER_ID`, `GOOGLE_WALLET_CREDENTIALS_FILE`, and `GOOGLE_WALLET_ENABLED=true` in `.env` or `.env.uat`.
+6. Apply migration `016`, rebuild the backend, then complete the Google Wallet step in `/admin`.
+
+Real JSON keys are ignored by Git. Compose mounts the selected key read-only at
+`/run/secrets/google_wallet_service_account`; the private key is never stored in
+Postgres or returned by an API. See Google's [issuer onboarding](https://developers.google.com/wallet/retail/loyalty-cards/getting-started/issuer-onboarding)
+and [REST authentication](https://developers.google.com/wallet/retail/loyalty-cards/getting-started/auth/rest)
+guides.
+
+Google downloads programme and hero images from the public URLs stored in each
+Wallet resource. `PUBLIC_BASE_URL` is the single origin used for Apple Wallet,
+Google Wallet artwork, pass links, and API callbacks, so Google Wallet must be
+configured with a publicly reachable HTTPS application/API hostname. Use
+`PUBLIC_BASE_URL=https://app.just-loyalty.com` in production and
+`PUBLIC_BASE_URL=https://demo.grayworks.dev` in UAT.
+
+Google Wallet provisioning intentionally rejects localhost, private IP
+addresses, and plain HTTP origins because Google's servers cannot retrieve the
+artwork from them. For a future tunnel-based test, point the tunnel at the
+normal Nginx proxy, set `PUBLIC_BASE_URL` to the tunnel's HTTPS origin, and
+recreate the backend before provisioning or synchronizing the class. This
+exposes the same application routes as the normal proxy; there is no separate
+Google Wallet artwork gateway.
+
+Migration `016_add_google_wallet_loyalty_programs.sql` creates:
+
+- `loyalty_programs` and `loyalty_program_links` for platform-neutral programme content.
+- `apple_pass_programs` to map existing Apple pass types to the shared programme.
+- `google_wallet_classes` and `google_wallet_objects` for Google resources and sync state.
+- `wallet_sync_jobs` for durable, retryable class and object updates.
+
+Existing Apple designs and links are backfilled and remain writable for one
+compatibility release. Database triggers mirror existing Apple design writes to
+the shared tables, so installed Apple passes continue unchanged.
+
+Platform administrators use these authenticated routes:
+
+```text
+GET  /api/v1/admin/merchants/{merchantID}/google-wallet
+PUT  /api/v1/admin/merchants/{merchantID}/google-wallet/assets
+POST /api/v1/admin/merchants/{merchantID}/google-wallet/provision
+POST /api/v1/admin/merchants/{merchantID}/google-wallet/activate
+```
+
+The square programme logo must be a PNG of at least `660 x 660`. The optional
+wide logo must be a PNG of at least `1280 x 400`. Uploads are decoded and
+re-encoded before storage. Provisioning submits the merchant class for review;
+local activation succeeds only after Google reports `APPROVED`. Demo Mode cards
+display `[TEST ONLY]` until Google grants publishing access.
+
+The first visit to a member's Google save route idempotently creates that
+member's `LoyaltyObject`, then redirects to
+`https://pay.google.com/gp/v/save/<jwt>`. Stamp, reward, programme, and campaign
+changes update Google asynchronously through `wallet_sync_jobs`. Google errors
+therefore do not roll back registration or the authoritative member transaction.
+
 ## Stamp Scanner API
 
-The merchant admin console has a `Customers > Stamp Scanner` tab for the demo stamp workflow. A logged-in merchant can scan the QR code on a customer's Wallet pass, or manually enter the readable member ID if camera scanning is unavailable.
+The merchant admin console has a `Customers > Stamp Scanner` tab. Scanning a Wallet QR code or entering a member ID loads the customer without changing their balance. The merchant then chooses **Add Stamp**, **Issue Reward**, or **Redeem Reward**.
 
 The pass QR payload currently uses this shape:
 
@@ -442,7 +614,14 @@ The pass QR payload currently uses this shape:
 stamp-card:MBR-8K4J2QPA
 ```
 
-The web app extracts the `MBR-...` value and calls:
+The web app extracts the `MBR-...` value and first calls:
+
+```http
+GET /api/v1/customers/members/MBR-8K4J2QPA
+Authorization: Bearer signed-merchant-token
+```
+
+Adding a stamp calls:
 
 ```http
 PUT /api/v1/customers/members/MBR-8K4J2QPA/stamps
@@ -468,17 +647,37 @@ Response:
     "customer_email": "taylor@example.com",
     "merchant": "Daily Brew",
     "stamp_progress": 7,
+    "available_rewards": 0,
     "status": "active"
   },
   "event": {
     "stamp_delta": 1,
     "previous_stamp_progress": 6,
-    "new_stamp_progress": 7
+    "new_stamp_progress": 7,
+    "stamp_goal": 10
   }
 }
 ```
 
-The backend reads the merchant name from the login token, not from the request body. The repository locks the member row, verifies the member belongs to that merchant, clamps stamp progress between `0` and `10`, and returns `403 forbidden` if another merchant attempts the update.
+At the configured stamp goal, issue one reward with a unique idempotency key:
+
+```http
+POST /api/v1/customers/members/MBR-8K4J2QPA/rewards/issue
+Authorization: Bearer signed-merchant-token
+Idempotency-Key: issue:MBR-8K4J2QPA:unique-request-id
+```
+
+Redeem one available reward with the same header requirement:
+
+```http
+POST /api/v1/customers/members/MBR-8K4J2QPA/rewards/redeem
+Authorization: Bearer signed-merchant-token
+Idempotency-Key: redeem:MBR-8K4J2QPA:unique-request-id
+```
+
+Issue and redemption run in locked database transactions and append to `member_reward_transactions`. Issuing subtracts the configured stamp goal, increments `available_rewards`, and returns the member to `active`; redemption decrements the reward balance without changing current stamps. Reusing the same idempotency key returns the original transaction and does not send a second Wallet push.
+
+All member mutations derive merchant identity from the login token and verify ownership. Successful stamp, issue, and redemption actions mark the pass as updated and use the existing APNs flow to refresh registered Wallet passes. The pass information view displays the current balance as `Rewards Earned`.
 
 ## Run
 
@@ -633,9 +832,10 @@ curl -X PUT https://loyalty.example.com/api/v1/admin/merchants/MCH-EXAMPLE/apple
   -H 'Content-Type: application/json' \
   -d '{
     "pass_type_identifier": "pass.com.justloyalty.luckincoffee",
-    "program_name": "Luckin Coffee Loyalty Program",
+    "program_name": "Luckin Coffee Loyalty Card",
     "pass_description": "Collect stamps and enjoy rewards at Luckin Coffee.",
     "stamp_goal": 10,
+    "reward_title": "Free Coffee",
     "background_color": "#5434F5",
     "foreground_color": "#FFFFFF",
     "label_color": "#E1DCFF",
@@ -652,9 +852,76 @@ curl -X PUT https://loyalty.example.com/api/v1/admin/merchants/MCH-EXAMPLE/apple
   }'
 ```
 
-`campaign_display_mode: details` keeps the active campaign in the pass back
-field `latest_offer`. Its `changeMessage` still produces the Wallet campaign
-notification, but campaign copy is not displayed on the pass front.
+`campaign_display_mode` supports the following values:
+
+- `details` keeps the full active campaign message in the Pass Details field
+  `latest_offer` and does not display campaign copy on the front.
+- `front_and_details` adds the campaign title to the front auxiliary field
+  `latest_offer_title` and keeps the full message in Pass Details.
+- `none` hides both campaign fields and remains available for API compatibility.
+
+Only `latest_offer` has a `changeMessage`, so Wallet can show the full campaign
+notification without producing a duplicate notification from the front field.
+
+### Dynamic stamp artwork
+
+Migration `014_add_stamp_icon_key.sql` adds the merchant-level
+`apple_pass_designs.stamp_icon_key` setting. Supported values are `none`,
+`logo`, `coffee`, `star`, `gift`, `heart`, `shopping_bag`, and `custom` after
+migration `015_default_physical_stamp_logo.sql` is applied. Migration `015`
+defaults new designs to `logo` without changing existing rows. The built-in
+keys remain API-compatible, while the merchant interfaces expose only the
+merchant logo and a custom transparent icon.
+
+For goals from 1 to 10, the backend renders the member's current progress into
+`strip.png`, `strip@2x.png`, and `strip@3x.png` while generating the signed
+pass. Each position is a white physical stamp circle; completed positions show
+the selected artwork and empty positions remain blank. Goals up to 5 use one
+centered row; goals from 6 to 10 use two balanced rows so each stamp remains
+readable. `logo` uses the merchant's existing `icon@3x.png`. Goals above 10,
+`none`, and unavailable artwork safely fall back to the remaining-stamps field.
+Stamp updates and reward resets already mark the pass as updated, so the next
+Wallet refresh receives newly rendered artwork.
+
+Use the following standard Apple Wallet PNG dimensions. A transparent icon
+background is recommended when the same icon is used inside the white physical
+stamp circles:
+
+```text
+icon.png       38 x 38 px
+icon@2x.png    76 x 76 px
+icon@3x.png   114 x 114 px
+
+logo.png       50-160 x 50 px
+logo@2x.png   100-320 x 100 px
+logo@3x.png   150-480 x 150 px
+```
+
+The programme name is omitted from the pass front and is used as Apple Wallet's
+required top-level description, such as `Coffee Brew Loyalty Card`. It is not
+repeated as a separate `Programme` field in Pass Details. The stored
+`pass_description` field remains in the API for backwards compatibility and is
+populated from the programme name by the web consoles.
+
+Merchants publish stamp artwork through the authenticated multipart endpoint:
+
+```text
+PUT /api/v1/merchants/me/apple-wallet/stamp-icon
+stamp_icon_key=logo
+```
+
+The authenticated `GET` form of the same endpoint returns the source artwork
+for an accurate merchant preview:
+
+```text
+GET /api/v1/merchants/me/apple-wallet/stamp-icon?source=logo
+```
+
+For `custom`, include a `stamp_icon` file containing a transparent square PNG
+between 64 and 512 pixels and no larger than 1 MB. The server decodes and
+re-encodes the image before storing it as `stamp.png` in the merchant's asset
+bundle. The admin onboarding asset upload accepts the same image using the
+multipart field name `stamp.png`.
 
 After activation, the merchant can maintain the customer-facing information
 from the **Passes** section of the merchant portal. The portal uses the

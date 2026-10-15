@@ -6,6 +6,9 @@ import (
 	"image/color"
 	"image/png"
 	"testing"
+
+	"native-ios-passkit-wip/internal/config"
+	"native-ios-passkit-wip/internal/domain"
 )
 
 func TestValidateGoogleWalletPublicBaseURL(t *testing.T) {
@@ -28,6 +31,25 @@ func TestValidateGoogleWalletPublicBaseURL(t *testing.T) {
 				t.Fatalf("validateGoogleWalletPublicBaseURL(%q) error = %v, wantErr %v", test.value, err, test.wantErr)
 			}
 		})
+	}
+}
+
+func TestGoogleWalletPublicURLsUsePublicBaseURL(t *testing.T) {
+	wallet := GoogleWalletService{cfg: config.Config{PublicBaseURL: "https://app.just-loyalty.com/"}}
+	program := domain.LoyaltyProgram{ProgramID: "LPR-TEST", Version: 4}
+	object := domain.GoogleWalletObject{ImageToken: "image-token"}
+	member := domain.StoreMember{StampProgress: 6}
+
+	assetURL := wallet.publicAssetURL(program, "program-logo.png")
+	wantAssetURL := "https://app.just-loyalty.com/api/v1/public/google-wallet/assets/LPR-TEST/program-logo.png?v=4"
+	if assetURL != wantAssetURL {
+		t.Fatalf("publicAssetURL() = %q, want %q", assetURL, wantAssetURL)
+	}
+
+	stampURL := wallet.publicStampURL(object, program, member)
+	wantStampURL := "https://app.just-loyalty.com/api/v1/public/google-wallet/images/image-token/stamps.png?v=4-6"
+	if stampURL != wantStampURL {
+		t.Fatalf("publicStampURL() = %q, want %q", stampURL, wantStampURL)
 	}
 }
 
