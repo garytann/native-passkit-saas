@@ -1,5 +1,9 @@
 import React, { useMemo } from "react";
-import { WalletCards } from "lucide-react";
+
+const walletBadgeSources = {
+  apple: "/add-to-apple-wallet.svg",
+  google: "/add-to-google-wallet.png",
+};
 
 export default function WalletButtons({ walletLinks, appleFallback = "", className = "" }) {
   const links = useMemo(() => normalizedLinks(walletLinks, appleFallback), [walletLinks, appleFallback]);
@@ -8,14 +12,16 @@ export default function WalletButtons({ walletLinks, appleFallback = "", classNa
 
   return (
     <div className={`wallet-actions ${className}`.trim()}>
-      {links.map(({ platform, url, label }) => platform === "google" ? (
-        <a className="google-wallet-action" href={url} key={platform} target="_blank" rel="noreferrer" aria-label={label}>
-          <img src="/add-to-google-wallet.png" alt={label} />
-        </a>
-      ) : (
-        <a className="primary-action apple-wallet-action" href={url} key={platform}>
-          <WalletCards size={18} />
-          {label}
+      {links.map(({ platform, url, label }) => (
+        <a
+          className={`wallet-badge-action ${platform}-wallet-action`}
+          href={url}
+          key={platform}
+          target={platform === "google" ? "_blank" : undefined}
+          rel={platform === "google" ? "noreferrer" : undefined}
+          aria-label={label}
+        >
+          <img src={walletBadgeSources[platform]} alt={label} />
         </a>
       ))}
     </div>

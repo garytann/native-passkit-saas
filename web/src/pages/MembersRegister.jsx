@@ -154,7 +154,6 @@ function merchantNameFromSlug(slug) {
 
 function SuccessPanel({ passLinks }) {
   const member = passLinks.member;
-  const appleAvailable = Boolean(passLinks.wallet_links?.apple?.url || passLinks.pass_url);
 
   return (
     <div className="success-panel">
@@ -169,7 +168,6 @@ function SuccessPanel({ passLinks }) {
 
       <div className="success-actions">
         <WalletButtons walletLinks={passLinks.wallet_links} appleFallback={passLinks.pass_url} />
-        {appleAvailable ? <a className="secondary-action" href={passLinks.preview_url} target="_blank" rel="noreferrer">Apple Preview</a> : null}
       </div>
     </div>
   );

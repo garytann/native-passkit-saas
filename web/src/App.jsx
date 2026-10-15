@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
 import {
   Activity,
@@ -108,11 +108,6 @@ export default function App() {
     loadCampaigns(session.token);
     loadPassDesign(session.token);
   }, [session]);
-
-  const previewUrl = useMemo(() => {
-    const safeId = encodeURIComponent(passLinks?.member?.member_id ?? "member-1001");
-    return `${API_BASE}${API_VERSION_PREFIX}/apple/passes/${safeId}/preview`;
-  }, [passLinks]);
 
   async function registerMember() {
     setStatus("loading");
@@ -332,7 +327,6 @@ export default function App() {
             setCustomerTab={setCustomerTab}
             registration={registration}
             setRegistration={setRegistration}
-            previewUrl={previewUrl}
             passLinks={passLinks}
             status={status}
             error={error}
@@ -630,10 +624,8 @@ function MetricCard({ label, value, delta, icon: Icon }) {
   );
 }
 
-function PassGenerator({ registration, setRegistration, previewUrl, passLinks, status, error, session, onRegister }) {
-  const activePreviewUrl = passLinks?.preview_url ?? previewUrl;
+function PassGenerator({ registration, setRegistration, passLinks, status, error, session, onRegister }) {
   const createdMember = passLinks?.member;
-  const appleAvailable = Boolean(passLinks?.wallet_links?.apple?.url || passLinks?.pass_url);
   const signupLink = merchantSignupLink(session?.merchant);
 
   function updateRegistration(field, value) {
@@ -720,10 +712,6 @@ function PassGenerator({ registration, setRegistration, previewUrl, passLinks, s
 
             <div className="generator-actions">
               {createdMember ? <WalletButtons walletLinks={passLinks?.wallet_links} appleFallback={passLinks?.pass_url} /> : null}
-              {appleAvailable ? <a className="secondary-action" href={activePreviewUrl} target="_blank" rel="noreferrer">
-                <WalletCards size={17} />
-                Apple Preview
-              </a> : null}
             </div>
           </aside>
         </section>

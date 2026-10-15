@@ -3090,27 +3090,33 @@ textarea:focus {
 
 .wallet-actions {
   width: 100%;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  justify-items: center;
   align-items: center;
   gap: 10px;
 }
 
-.wallet-actions .apple-wallet-action {
-  width: auto;
-  min-height: 44px;
-}
-
-.google-wallet-action {
+.wallet-badge-action {
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
+  justify-content: center;
+  width: min(283px, 100%);
+  height: 50px;
+  border-radius: 8px;
+  outline: none;
 }
 
-.google-wallet-action img {
+.wallet-badge-action:focus-visible {
+  outline: 3px solid var(--brand-purple-soft);
+  outline-offset: 3px;
+}
+
+.wallet-badge-action img {
   display: block;
-  width: 226px;
-  height: 40px;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
   object-fit: contain;
 }
 
@@ -3118,8 +3124,7 @@ textarea:focus {
   display: grid;
 }
 
-.success-actions .apple-wallet-action,
-.success-actions .google-wallet-action {
+.success-actions .wallet-badge-action {
   justify-content: center;
 }
 
