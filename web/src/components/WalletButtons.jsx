@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 
 const walletBadgeSources = {
-  apple: "/add-to-apple-wallet.svg",
+  apple: "/add-to-apple-wallet.svg?v=20261015",
   google: "/add-to-google-wallet.png",
 };
 
