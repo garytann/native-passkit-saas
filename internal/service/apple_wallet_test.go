@@ -93,7 +93,9 @@ func TestStoreGeneratedPassAssetsWritesSourcesAndPreservesOtherAssets(t *testing
 	if err := os.WriteFile(googleAssetPath, []byte("google-asset"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	source := testPNGBytes(t, image.NewRGBA(image.Rect(0, 0, 512, 512)))
+	sourceImage := image.NewRGBA(image.Rect(0, 0, 512, 512))
+	sourceImage.Set(0, 0, color.NRGBA{A: 255})
+	source := testPNGBytes(t, sourceImage)
 	service := NewAppleWalletService(config.Config{PassAssetBasePath: basePath}, nil)
 
 	if err := service.StoreGeneratedPassAssets("merchant-assets", source, source, nil); err != nil {
@@ -106,9 +108,9 @@ func TestStoreGeneratedPassAssetsWritesSourcesAndPreservesOtherAssets(t *testing
 		"icon.png":        {X: 38, Y: 38},
 		"icon@2x.png":     {X: 76, Y: 76},
 		"icon@3x.png":     {X: 114, Y: 114},
-		"logo.png":        {X: 120, Y: 50},
-		"logo@2x.png":     {X: 240, Y: 100},
-		"logo@3x.png":     {X: 360, Y: 150},
+		"logo.png":        {X: 160, Y: 50},
+		"logo@2x.png":     {X: 320, Y: 100},
+		"logo@3x.png":     {X: 480, Y: 150},
 		"source-icon.png": {X: 512, Y: 512},
 		"source-logo.png": {X: 512, Y: 512},
 	} {

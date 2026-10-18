@@ -324,7 +324,7 @@ function DesignStep({ onboarding, busy, onSave }) {
           <strong>Apple Wallet source artwork</strong>
           <span>Upload one square icon and one square logo PNG, each between 512 × 512 and 4096 × 4096 px.</span>
           <span>The backend generates all 1x, 2x, and 3x Wallet sizes automatically.</span>
-          <small>Artwork keeps its original proportions. Logos are centered on transparent horizontal canvases, and transparent source backgrounds are recommended.</small>
+          <small>Transparent logo margins are removed automatically before the artwork is resized and aligned to the top-left. Use a transparent background for the most predictable result; opaque backgrounds are treated as part of the logo.</small>
         </div>
         <div className="asset-file-grid">
           <FileField label="Source icon" hint={files.icon_source?.name ?? (onboarding.assets_uploaded ? "Uploaded - choose both files to replace" : "Square PNG, 512-4096 px")} accept="image/png" required={!onboarding.assets_uploaded} onChange={(file) => setFiles((current) => ({ ...current, icon_source: file }))} />
