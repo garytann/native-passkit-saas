@@ -261,7 +261,7 @@ func (c AppleWalletAdminController) uploadPassAssets(w http.ResponseWriter, r *h
 		writeServiceError(w, err)
 		return
 	}
-	assets := make(map[string][]byte, 7)
+	assets := make(map[string][]byte, 9)
 	standardAssetCount := 0
 	for _, name := range []string{"icon.png", "icon@2x.png", "icon@3x.png", "logo.png", "logo@2x.png", "logo@3x.png"} {
 		data, ok, err := optionalMultipartFile(r, name, 4<<20)
@@ -272,6 +272,18 @@ func (c AppleWalletAdminController) uploadPassAssets(w http.ResponseWriter, r *h
 		if ok {
 			assets[name] = data
 			standardAssetCount++
+		}
+	}
+	sourceAssetCount := 0
+	for _, name := range []string{"icon_source", "logo_source"} {
+		data, ok, err := optionalMultipartFile(r, name, 4<<20)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if ok {
+			assets[name] = data
+			sourceAssetCount++
 		}
 	}
 	stampIconUploaded := false
@@ -286,6 +298,14 @@ func (c AppleWalletAdminController) uploadPassAssets(w http.ResponseWriter, r *h
 		writeError(w, http.StatusBadRequest, "upload all six standard pass assets together")
 		return
 	}
+	if sourceAssetCount != 0 && sourceAssetCount != 2 {
+		writeError(w, http.StatusBadRequest, "upload icon_source and logo_source together")
+		return
+	}
+	if sourceAssetCount != 0 && standardAssetCount != 0 {
+		writeError(w, http.StatusBadRequest, "source artwork cannot be mixed with six-file pass assets")
+		return
+	}
 	alias := ""
 	if status.Design != nil {
 		alias = status.Design.AssetBundleRef
@@ -297,7 +317,9 @@ func (c AppleWalletAdminController) uploadPassAssets(w http.ResponseWriter, r *h
 			return
 		}
 	}
-	if standardAssetCount == 6 {
+	if sourceAssetCount == 2 {
+		err = c.wallet.StoreGeneratedPassAssets(alias, assets["icon_source"], assets["logo_source"], assets["stamp.png"])
+	} else if standardAssetCount == 6 {
 		err = c.wallet.StorePassAssets(alias, assets)
 	} else if stampIconUploaded {
 		err = c.wallet.StoreCustomStampIcon(alias, assets["stamp.png"])

@@ -83,6 +83,53 @@ func TestValidatePassAssetBundleRejectsIncorrectScale(t *testing.T) {
 	}
 }
 
+func TestStoreGeneratedPassAssetsWritesSourcesAndPreservesOtherAssets(t *testing.T) {
+	basePath := t.TempDir()
+	bundle := filepath.Join(basePath, "merchant-assets")
+	if err := os.MkdirAll(bundle, 0755); err != nil {
+		t.Fatal(err)
+	}
+	googleAssetPath := filepath.Join(bundle, "google-program-logo.png")
+	if err := os.WriteFile(googleAssetPath, []byte("google-asset"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	source := testPNGBytes(t, image.NewRGBA(image.Rect(0, 0, 512, 512)))
+	service := NewAppleWalletService(config.Config{PassAssetBasePath: basePath}, nil)
+
+	if err := service.StoreGeneratedPassAssets("merchant-assets", source, source, nil); err != nil {
+		t.Fatalf("store generated pass assets: %v", err)
+	}
+	if err := validatePassAssetBundle(bundle); err != nil {
+		t.Fatalf("validate generated bundle: %v", err)
+	}
+	for name, expected := range map[string]image.Point{
+		"icon.png":        {X: 38, Y: 38},
+		"icon@2x.png":     {X: 76, Y: 76},
+		"icon@3x.png":     {X: 114, Y: 114},
+		"logo.png":        {X: 120, Y: 50},
+		"logo@2x.png":     {X: 240, Y: 100},
+		"logo@3x.png":     {X: 360, Y: 150},
+		"source-icon.png": {X: 512, Y: 512},
+		"source-logo.png": {X: 512, Y: 512},
+	} {
+		data, err := os.ReadFile(filepath.Join(bundle, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		cfg, err := png.DecodeConfig(bytes.NewReader(data))
+		if err != nil {
+			t.Fatalf("decode %s: %v", name, err)
+		}
+		if cfg.Width != expected.X || cfg.Height != expected.Y {
+			t.Errorf("%s dimensions = %dx%d, want %dx%d", name, cfg.Width, cfg.Height, expected.X, expected.Y)
+		}
+	}
+	data, err := os.ReadFile(googleAssetPath)
+	if err != nil || string(data) != "google-asset" {
+		t.Fatalf("Google Wallet asset changed: data=%q err=%v", data, err)
+	}
+}
+
 func TestStampArtworkReturnsMerchantLogoAndCustomIcon(t *testing.T) {
 	basePath := t.TempDir()
 	bundle := filepath.Join(basePath, "merchant-assets")

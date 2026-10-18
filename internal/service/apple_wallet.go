@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"native-ios-passkit-wip/internal/applepass"
 	"native-ios-passkit-wip/internal/config"
 	"native-ios-passkit-wip/internal/domain"
 )
@@ -555,6 +556,8 @@ var requiredPassAssets = []string{
 	"logo.png", "logo@2x.png", "logo@3x.png",
 }
 
+var sourcePassAssets = []string{"source-icon.png", "source-logo.png"}
+
 func validatePassAssetBundle(directory string) error {
 	dimensions := make(map[string]image.Config, len(requiredPassAssets))
 	for _, name := range requiredPassAssets {
@@ -662,6 +665,14 @@ func (s AppleWalletService) StorePassAssets(alias string, assets map[string][]by
 	if s.assetBasePath == "" {
 		return errors.New("apple pass asset base path is not configured")
 	}
+	var sanitizedStampIcon []byte
+	if data := assets["stamp.png"]; len(data) > 0 {
+		var err error
+		sanitizedStampIcon, err = sanitizeStampIcon(data)
+		if err != nil {
+			return err
+		}
+	}
 	directory := filepath.Join(s.assetBasePath, alias)
 	if err := os.MkdirAll(directory, 0755); err != nil {
 		return fmt.Errorf("create pass asset directory: %w", err)
@@ -675,12 +686,15 @@ func (s AppleWalletService) StorePassAssets(alias string, assets map[string][]by
 			return fmt.Errorf("store pass asset %s: %w", name, err)
 		}
 	}
-	if data := assets["stamp.png"]; len(data) > 0 {
-		sanitized, err := sanitizeStampIcon(data)
-		if err != nil {
-			return err
+	for _, name := range sourcePassAssets {
+		if data := assets[name]; len(data) > 0 {
+			if err := writeAtomicFile(filepath.Join(directory, name), data, 0644); err != nil {
+				return fmt.Errorf("store pass asset %s: %w", name, err)
+			}
 		}
-		if err := writeAtomicFile(filepath.Join(directory, "stamp.png"), sanitized, 0644); err != nil {
+	}
+	if len(sanitizedStampIcon) > 0 {
+		if err := writeAtomicFile(filepath.Join(directory, "stamp.png"), sanitizedStampIcon, 0644); err != nil {
 			return fmt.Errorf("store pass asset stamp.png: %w", err)
 		}
 	}
@@ -688,6 +702,17 @@ func (s AppleWalletService) StorePassAssets(alias string, assets map[string][]by
 		return ValidationError{Message: err.Error()}
 	}
 	return nil
+}
+
+func (s AppleWalletService) StoreGeneratedPassAssets(alias string, iconSource []byte, logoSource []byte, stampIcon []byte) error {
+	assets, err := applepass.GenerateStandardArtwork(iconSource, logoSource)
+	if err != nil {
+		return ValidationError{Message: err.Error()}
+	}
+	if len(stampIcon) > 0 {
+		assets["stamp.png"] = stampIcon
+	}
+	return s.StorePassAssets(alias, assets)
 }
 
 func (s AppleWalletService) StoreCustomStampIcon(assetBundleRef string, data []byte) error {

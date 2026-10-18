@@ -28,7 +28,7 @@ const steps = [
   { key: "google", label: "Google Wallet", icon: WalletCards },
 ];
 
-const assetNames = ["icon.png", "icon@2x.png", "icon@3x.png", "logo.png", "logo@2x.png", "logo@3x.png"];
+const appleArtworkSources = ["icon_source", "logo_source"];
 
 export default function AdminConsolePage() {
   const [session, setSession] = useState(null);
@@ -223,7 +223,7 @@ export default function AdminConsolePage() {
                 let assetBundleRef = onboarding.design?.asset_bundle_ref || onboarding.merchant.merchant_slug;
                 if (files) {
                   const form = new FormData();
-                  assetNames.forEach((name) => { if (files[name]) form.append(name, files[name]); });
+                  appleArtworkSources.forEach((name) => { if (files[name]) form.append(name, files[name]); });
                   if (files["stamp.png"]) form.append("stamp.png", files["stamp.png"]);
                   const uploaded = await api(`/admin/merchants/${selectedID}/apple-wallet/pass-assets`, { method: "PUT", body: form });
                   assetBundleRef = uploaded.asset_bundle_ref;
@@ -302,13 +302,14 @@ function DesignStep({ onboarding, busy, onSave }) {
     stampIconKey: existing?.stamp_icon_key ?? "logo",
   });
   const [files, setFiles] = useState({});
-  const completeFiles = assetNames.every((name) => files[name]);
+  const hasArtworkSource = appleArtworkSources.some((name) => files[name]);
+  const completeArtworkSources = appleArtworkSources.every((name) => files[name]);
   const customStampReady = values.stampIconKey !== "custom" || Boolean(files["stamp.png"]) || existing?.stamp_icon_key === "custom";
   const update = (field) => (event) => setValues((current) => ({ ...current, [field]: event.target.value }));
 
   return (
     <StepShell eyebrow="Wallet appearance" title="Upload artwork and define the pass" description="Programme rules and customer information are shared across wallets, while each platform keeps its own validated artwork.">
-      <form className="onboarding-form design-form" onSubmit={(event) => { event.preventDefault(); onSave(values, completeFiles || files["stamp.png"] ? files : null); }}>
+      <form className="onboarding-form design-form" onSubmit={(event) => { event.preventDefault(); onSave(values, completeArtworkSources || files["stamp.png"] ? files : null); }}>
         <Field label="Program name"><input value={values.programName} onChange={update("programName")} required /></Field>
         <Field label="Stamp goal"><input type="number" min="1" max="100" value={values.stampGoal} onChange={update("stampGoal")} readOnly={existing?.status === "active"} required /></Field>
         <Field label="Reward title"><input value={values.rewardTitle} onChange={update("rewardTitle")} maxLength={40} placeholder="Free Coffee" required /></Field>
@@ -320,22 +321,25 @@ function DesignStep({ onboarding, busy, onSave }) {
           <ColorField label="Labels" value={values.labelColor} onChange={(value) => setValues({ ...values, labelColor: value })} />
         </div>
         <div className="pass-asset-guidance">
-          <strong>Apple Wallet artwork sizes</strong>
-          <span>Icons: 38 × 38, 76 × 76, and 114 × 114 px.</span>
-          <span>Logos: 50–160 × 50, 100–320 × 100, and 150–480 × 150 px.</span>
-          <small>Upload PNG files using the exact <code>icon.png</code>, <code>icon@2x.png</code>, <code>icon@3x.png</code>, <code>logo.png</code>, <code>logo@2x.png</code>, and <code>logo@3x.png</code> filenames. Transparent icon backgrounds are recommended.</small>
+          <strong>Apple Wallet source artwork</strong>
+          <span>Upload one square icon and one square logo PNG, each between 512 × 512 and 4096 × 4096 px.</span>
+          <span>The backend generates all 1x, 2x, and 3x Wallet sizes automatically.</span>
+          <small>Artwork keeps its original proportions. Logos are centered on transparent horizontal canvases, and transparent source backgrounds are recommended.</small>
         </div>
-        <div className="asset-file-grid">{assetNames.map((name) => <FileField key={name} label={name} hint={files[name]?.name ?? (onboarding.assets_uploaded ? "Already uploaded" : "PNG required")} accept="image/png" onChange={(file) => setFiles((current) => ({ ...current, [name]: file }))} />)}</div>
+        <div className="asset-file-grid">
+          <FileField label="Source icon" hint={files.icon_source?.name ?? (onboarding.assets_uploaded ? "Uploaded - choose both files to replace" : "Square PNG, 512-4096 px")} accept="image/png" required={!onboarding.assets_uploaded} onChange={(file) => setFiles((current) => ({ ...current, icon_source: file }))} />
+          <FileField label="Source logo" hint={files.logo_source?.name ?? (onboarding.assets_uploaded ? "Uploaded - choose both files to replace" : "Square PNG, 512-4096 px")} accept="image/png" required={!onboarding.assets_uploaded} onChange={(file) => setFiles((current) => ({ ...current, logo_source: file }))} />
+        </div>
         <div className="stamp-picker-field">
           <div><strong>Stamp artwork</strong><small>Choose the artwork placed inside completed stamp spots.</small></div>
-          <StampArtworkPicker value={values.stampIconKey} onChange={(stampIconKey) => setValues((current) => ({ ...current, stampIconKey }))} logoFile={files["icon@3x.png"]} customFile={files["stamp.png"]} onCustomFile={(file) => setFiles((current) => ({ ...current, "stamp.png": file }))} goal={values.stampGoal} />
+          <StampArtworkPicker value={values.stampIconKey} onChange={(stampIconKey) => setValues((current) => ({ ...current, stampIconKey }))} logoFile={files.icon_source} customFile={files["stamp.png"]} onCustomFile={(file) => setFiles((current) => ({ ...current, "stamp.png": file }))} goal={values.stampGoal} />
         </div>
         <Field label="Website URL" wide><input type="url" value={values.websiteURL} onChange={update("websiteURL")} placeholder="https://merchant.example" /></Field>
         <Field label="Instagram URL" wide><input type="url" value={values.instagramURL} onChange={update("instagramURL")} placeholder="https://instagram.com/merchant" /></Field>
         <Field label="WhatsApp URL" wide><input type="url" value={values.whatsappURL} onChange={update("whatsappURL")} placeholder="https://wa.me/6591234567" /></Field>
         <Field label="Customer support" wide><textarea value={values.supportText} onChange={update("supportText")} required /></Field>
         <Field label="Terms and conditions" wide><textarea value={values.termsText} onChange={update("termsText")} required /></Field>
-        <button className="primary-action" disabled={busy || (!onboarding.assets_uploaded && !completeFiles) || !customStampReady || !onboarding.certificate_validated} type="submit">Save pass design<ChevronRight size={17} /></button>
+        <button className="primary-action" disabled={busy || (!onboarding.assets_uploaded && !completeArtworkSources) || (hasArtworkSource && !completeArtworkSources) || !customStampReady || !onboarding.certificate_validated} type="submit">Save pass design<ChevronRight size={17} /></button>
       </form>
     </StepShell>
   );

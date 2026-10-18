@@ -785,7 +785,16 @@ pass-assets/luckin-coffee/icon@3x.png
 pass-assets/luckin-coffee/logo.png
 pass-assets/luckin-coffee/logo@2x.png
 pass-assets/luckin-coffee/logo@3x.png
+pass-assets/luckin-coffee/source-icon.png
+pass-assets/luckin-coffee/source-logo.png
 ```
+
+The admin onboarding console only requires two source files: a square icon PNG
+and a square logo PNG. Each source must be between `512 x 512` and
+`4096 x 4096` pixels and no larger than 4 MB. The backend sanitizes and stores
+the sources, then generates the six standard Apple Wallet files. Square logo
+artwork is centered without distortion on a transparent horizontal canvas.
+Existing API clients may continue uploading all six standard assets together.
 
 Provision an existing or newly registered merchant in four steps. Replace the
 merchant ID and administrator token with your own values.
@@ -883,19 +892,31 @@ readable. `logo` uses the merchant's existing `icon@3x.png`. Goals above 10,
 Stamp updates and reward resets already mark the pass as updated, so the next
 Wallet refresh receives newly rendered artwork.
 
-Use the following standard Apple Wallet PNG dimensions. A transparent icon
-background is recommended when the same icon is used inside the white physical
-stamp circles:
+The onboarding artwork generator produces the following Apple Wallet PNG
+dimensions. A transparent source background is recommended when the icon is
+also used inside the white physical stamp circles:
 
 ```text
 icon.png       38 x 38 px
 icon@2x.png    76 x 76 px
 icon@3x.png   114 x 114 px
 
-logo.png       50-160 x 50 px
-logo@2x.png   100-320 x 100 px
-logo@3x.png   150-480 x 150 px
+logo.png      120 x 50 px
+logo@2x.png   240 x 100 px
+logo@3x.png   360 x 150 px
 ```
+
+The admin asset endpoint accepts the new source pair as multipart fields:
+
+```text
+PUT /api/v1/admin/merchants/{merchant_id}/apple-wallet/pass-assets
+icon_source=<square PNG>
+logo_source=<square PNG>
+```
+
+Both fields must be sent together. They cannot be mixed with the legacy
+six-file upload in the same request. An optional `stamp.png` can accompany
+either upload format.
 
 The programme name is omitted from the pass front and is used as Apple Wallet's
 required top-level description, such as `Coffee Brew Loyalty Card`. It is not
