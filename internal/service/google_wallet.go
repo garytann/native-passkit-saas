@@ -51,6 +51,11 @@ type GoogleWalletRepository interface {
 	RetrySyncJob(context.Context, domain.WalletSyncJob, string) error
 }
 
+type GoogleCampaignRepository interface {
+	CampaignByID(context.Context, string) (domain.Campaign, error)
+	LatestActiveCampaignForMerchant(context.Context, string) (domain.Campaign, error)
+}
+
 type googleServiceAccount struct {
 	ClientEmail string `json:"client_email"`
 	PrivateKey  string `json:"private_key"`
@@ -61,7 +66,7 @@ type GoogleWalletService struct {
 	repo      GoogleWalletRepository
 	members   MemberRepository
 	merchants MerchantRepository
-	campaigns ActiveCampaignRepository
+	campaigns GoogleCampaignRepository
 	api       *walletobjects.Service
 	account   googleServiceAccount
 }
@@ -71,7 +76,7 @@ type GoogleWalletAssets struct {
 	WideLogo    []byte
 }
 
-func NewGoogleWalletService(ctx context.Context, cfg config.Config, repo GoogleWalletRepository, members MemberRepository, merchants MerchantRepository, campaigns ActiveCampaignRepository) (GoogleWalletService, error) {
+func NewGoogleWalletService(ctx context.Context, cfg config.Config, repo GoogleWalletRepository, members MemberRepository, merchants MerchantRepository, campaigns GoogleCampaignRepository) (GoogleWalletService, error) {
 	service := GoogleWalletService{cfg: cfg, repo: repo, members: members, merchants: merchants, campaigns: campaigns}
 	if !cfg.GoogleWalletEnabled {
 		return service, nil
@@ -221,7 +226,11 @@ func (s GoogleWalletService) Provision(ctx context.Context, merchantID string) (
 	if _, err := os.Stat(filepath.Join(s.cfg.PassAssetBasePath, program.AssetBundleRef, "google-wide-logo.png")); err == nil {
 		wideRef = "google-wide-logo.png"
 	}
-	classResource := s.classResource(merchant, program, classID, "UNDER_REVIEW", wideRef != "")
+	campaign, err := s.latestActiveCampaign(ctx, merchant.Merchant)
+	if err != nil {
+		return domain.GoogleWalletConfiguration{}, err
+	}
+	classResource := s.classResource(merchant, program, campaign, classID, "UNDER_REVIEW", wideRef != "")
 	remote, err := s.upsertRemoteClass(ctx, classResource)
 	if err != nil {
 		return domain.GoogleWalletConfiguration{}, fmt.Errorf("provision Google Wallet class: %w", err)
@@ -382,23 +391,27 @@ func (s GoogleWalletService) NotifyCampaign(ctx context.Context, merchant string
 	if !s.Enabled() {
 		return nil
 	}
-	class, _, err := s.repo.ActiveClassByMerchantName(ctx, merchant)
+	if _, _, err := s.repo.ActiveClassByMerchantName(ctx, merchant); err != nil {
+		return err
+	}
+	jobID, err := domain.NewWalletSyncJobID()
 	if err != nil {
 		return err
 	}
-	request := &walletobjects.AddMessageRequest{Message: &walletobjects.Message{Id: "campaign_" + domain.StableToken(campaign.CampaignID, 16), Header: campaign.Title, Body: campaign.Message, MessageType: "TEXT_AND_NOTIFY"}}
-	_, err = s.api.Loyaltyclass.Addmessage(class.GoogleClassID, request).Context(ctx).Do()
-	if isGoogleQuotaExceeded(err) {
-		request.Message.MessageType = "TEXT"
-		_, err = s.api.Loyaltyclass.Addmessage(class.GoogleClassID, request).Context(ctx).Do()
-	}
-	if err != nil {
-		return fmt.Errorf("send Google Wallet campaign message: %w", err)
-	}
-	return nil
+	return s.repo.EnqueueSync(ctx, domain.EnqueueWalletSyncJobInput{
+		SyncJobID:      jobID,
+		Platform:       "google",
+		TargetType:     "campaign",
+		TargetID:       campaign.CampaignID,
+		DesiredVersion: campaign.CampaignID,
+	})
 }
 
 func (s GoogleWalletService) SyncProgram(ctx context.Context, classID string) error {
+	return s.syncProgram(ctx, classID, true)
+}
+
+func (s GoogleWalletService) syncProgram(ctx context.Context, classID string, refreshObjects bool) error {
 	configurationClass, err := s.repo.ClassByID(ctx, classID)
 	if err != nil {
 		return err
@@ -411,7 +424,11 @@ func (s GoogleWalletService) SyncProgram(ctx context.Context, classID string) er
 	if err != nil {
 		return err
 	}
-	remote, err := s.upsertRemoteClass(ctx, s.classResource(merchant, program, configurationClass.GoogleClassID, configurationClass.ReviewStatus, configurationClass.WideLogoRef != ""))
+	campaign, err := s.latestActiveCampaign(ctx, merchant.Merchant)
+	if err != nil {
+		return err
+	}
+	remote, err := s.upsertRemoteClass(ctx, s.classResource(merchant, program, campaign, configurationClass.GoogleClassID, configurationClass.ReviewStatus, configurationClass.WideLogoRef != ""))
 	if err != nil {
 		_ = s.repo.SetClassState(ctx, classID, configurationClass.ReviewStatus, "error", err.Error(), program.Version)
 		return err
@@ -423,6 +440,9 @@ func (s GoogleWalletService) SyncProgram(ctx context.Context, classID string) er
 	if err := s.repo.SetClassState(ctx, classID, normalizedReviewStatus(remote.ReviewStatus), status, "", program.Version); err != nil {
 		return err
 	}
+	if !refreshObjects {
+		return nil
+	}
 	objects, err := s.repo.ObjectsByClassID(ctx, classID)
 	if err != nil {
 		return err
@@ -433,6 +453,45 @@ func (s GoogleWalletService) SyncProgram(ctx context.Context, classID string) er
 		}
 	}
 	return nil
+}
+
+func (s GoogleWalletService) SyncCampaign(ctx context.Context, campaignID string) error {
+	if s.campaigns == nil {
+		return ErrRepositoryUnavailable
+	}
+	requested, err := s.campaigns.CampaignByID(ctx, strings.TrimSpace(campaignID))
+	if err != nil {
+		return err
+	}
+	latest, err := s.campaigns.LatestActiveCampaignForMerchant(ctx, requested.Merchant)
+	if err != nil {
+		return err
+	}
+	if latest.CampaignID == "" || latest.CampaignID != requested.CampaignID {
+		return nil
+	}
+
+	class, _, err := s.repo.ActiveClassByMerchantName(ctx, requested.Merchant)
+	if err != nil {
+		return err
+	}
+	remote, err := s.api.Loyaltyclass.Get(class.GoogleClassID).Context(ctx).Do()
+	if err != nil {
+		return fmt.Errorf("get Google Wallet class for campaign: %w", err)
+	}
+	messageID := googleCampaignMessageID(latest.CampaignID)
+	if !hasGoogleMessage(remote.Messages, messageID) {
+		request := &walletobjects.AddMessageRequest{Message: googleCampaignMessage(latest, "TEXT_AND_NOTIFY")}
+		_, err = s.api.Loyaltyclass.Addmessage(class.GoogleClassID, request).Context(ctx).Do()
+		if isGoogleQuotaExceeded(err) {
+			request.Message.MessageType = "TEXT"
+			_, err = s.api.Loyaltyclass.Addmessage(class.GoogleClassID, request).Context(ctx).Do()
+		}
+		if err != nil {
+			return fmt.Errorf("send Google Wallet campaign message: %w", err)
+		}
+	}
+	return s.syncProgram(ctx, class.GoogleClassID, false)
 }
 
 func (s GoogleWalletService) SyncMember(ctx context.Context, memberID string) error {
@@ -478,10 +537,15 @@ func (s GoogleWalletService) processSyncJobs(ctx context.Context) {
 	}
 	for _, job := range jobs {
 		var err error
-		if job.TargetType == "class" {
+		switch job.TargetType {
+		case "class":
 			err = s.SyncProgram(ctx, job.TargetID)
-		} else {
+		case "object":
 			err = s.SyncMember(ctx, job.TargetID)
+		case "campaign":
+			err = s.SyncCampaign(ctx, job.TargetID)
+		default:
+			err = fmt.Errorf("unsupported Google Wallet sync target type %q", job.TargetType)
 		}
 		if err == nil {
 			_ = s.repo.CompleteSyncJob(ctx, job.SyncJobID)
@@ -524,8 +588,8 @@ func (s GoogleWalletService) Asset(ctx context.Context, programID, name string) 
 	return os.ReadFile(filepath.Join(s.cfg.PassAssetBasePath, program.AssetBundleRef, filepath.Base(ref)))
 }
 
-func (s GoogleWalletService) classResource(merchant domain.Merchant, program domain.LoyaltyProgram, classID, review string, hasWide bool) *walletobjects.LoyaltyClass {
-	resource := &walletobjects.LoyaltyClass{Id: classID, IssuerName: merchant.Merchant, ReviewStatus: review, ProgramName: program.ProgramName, AccountNameLabel: "Member", AccountIdLabel: "Member ID", HexBackgroundColor: program.BackgroundColor, ProgramLogo: googleImage(s.publicAssetURL(program, "program-logo.png"), merchant.Merchant+" logo"), TextModulesData: classTextModules(program), LinksModuleData: googleLinks(program.Links)}
+func (s GoogleWalletService) classResource(merchant domain.Merchant, program domain.LoyaltyProgram, campaign domain.Campaign, classID, review string, hasWide bool) *walletobjects.LoyaltyClass {
+	resource := &walletobjects.LoyaltyClass{Id: classID, IssuerName: merchant.Merchant, ReviewStatus: review, ProgramName: program.ProgramName, AccountNameLabel: "Member", AccountIdLabel: "Member ID", HexBackgroundColor: program.BackgroundColor, ProgramLogo: googleImage(s.publicAssetURL(program, "program-logo.png"), merchant.Merchant+" logo"), TextModulesData: classTextModules(program, campaign), LinksModuleData: googleLinks(program.Links), Messages: googleCampaignMessages(campaign)}
 	if hasWide {
 		resource.WideProgramLogo = googleImage(s.publicAssetURL(program, "wide-logo.png"), merchant.Merchant+" wordmark")
 	}
@@ -565,6 +629,8 @@ func (s GoogleWalletService) upsertRemoteClass(ctx context.Context, resource *wa
 	if err != nil {
 		return nil, err
 	}
+	resource.Messages = mergeGoogleClassMessages(existing.Messages, resource.Messages)
+	resource.ForceSendFields = append(resource.ForceSendFields, "Messages")
 	resource.ReviewStatus = existing.ReviewStatus
 	if strings.EqualFold(existing.ReviewStatus, "APPROVED") {
 		resource.ReviewStatus = "UNDER_REVIEW"
@@ -636,8 +702,77 @@ func localized(value string) *walletobjects.LocalizedString {
 	return &walletobjects.LocalizedString{DefaultValue: &walletobjects.TranslatedString{Language: "en-SG", Value: value}}
 }
 
-func classTextModules(program domain.LoyaltyProgram) []*walletobjects.TextModuleData {
-	return []*walletobjects.TextModuleData{{Id: "collect_stamps", Header: "How to collect stamps", Body: program.StampInstructions}, {Id: "reward_details", Header: "Reward details", Body: program.RewardDetails}, {Id: "support", Header: "Customer support", Body: program.SupportText}, {Id: "terms", Header: "Terms and conditions", Body: program.TermsText}, {Id: "powered_by", Header: "Powered by", Body: "Just Loyalty"}}
+func classTextModules(program domain.LoyaltyProgram, campaign domain.Campaign) []*walletobjects.TextModuleData {
+	modules := make([]*walletobjects.TextModuleData, 0, 6)
+	if campaign.CampaignID != "" && googleCampaignAppearsInDetails(program.CampaignDisplayMode) {
+		modules = append(modules, &walletobjects.TextModuleData{Id: "latest_promotion", Header: "Latest Promotion", Body: googleCampaignBody(campaign)})
+	}
+	return append(modules,
+		&walletobjects.TextModuleData{Id: "collect_stamps", Header: "How to collect stamps", Body: program.StampInstructions},
+		&walletobjects.TextModuleData{Id: "reward_details", Header: "Reward details", Body: program.RewardDetails},
+		&walletobjects.TextModuleData{Id: "support", Header: "Customer support", Body: program.SupportText},
+		&walletobjects.TextModuleData{Id: "terms", Header: "Terms and conditions", Body: program.TermsText},
+		&walletobjects.TextModuleData{Id: "powered_by", Header: "Powered by", Body: "Just Loyalty"},
+	)
+}
+
+func (s GoogleWalletService) latestActiveCampaign(ctx context.Context, merchant string) (domain.Campaign, error) {
+	if s.campaigns == nil {
+		return domain.Campaign{}, nil
+	}
+	return s.campaigns.LatestActiveCampaignForMerchant(ctx, merchant)
+}
+
+func googleCampaignAppearsInDetails(mode string) bool {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	return mode == "" || mode == "details" || mode == "front_and_details"
+}
+
+func googleCampaignBody(campaign domain.Campaign) string {
+	title := strings.TrimSpace(campaign.Title)
+	message := strings.TrimSpace(campaign.Message)
+	if title == "" {
+		return message
+	}
+	if message == "" {
+		return title
+	}
+	return title + "\n\n" + message
+}
+
+func googleCampaignMessageID(campaignID string) string {
+	return "campaign_" + domain.StableToken(campaignID, 16)
+}
+
+func googleCampaignMessage(campaign domain.Campaign, messageType string) *walletobjects.Message {
+	return &walletobjects.Message{Id: googleCampaignMessageID(campaign.CampaignID), Header: campaign.Title, Body: campaign.Message, MessageType: messageType}
+}
+
+func googleCampaignMessages(campaign domain.Campaign) []*walletobjects.Message {
+	if campaign.CampaignID == "" {
+		return nil
+	}
+	return []*walletobjects.Message{googleCampaignMessage(campaign, "TEXT")}
+}
+
+func hasGoogleMessage(messages []*walletobjects.Message, messageID string) bool {
+	for _, message := range messages {
+		if message != nil && message.Id == messageID {
+			return true
+		}
+	}
+	return false
+}
+
+func mergeGoogleClassMessages(existing, desired []*walletobjects.Message) []*walletobjects.Message {
+	result := make([]*walletobjects.Message, 0, len(existing)+len(desired))
+	for _, message := range existing {
+		if message == nil || strings.HasPrefix(message.Id, "campaign_") {
+			continue
+		}
+		result = append(result, message)
+	}
+	return append(result, desired...)
 }
 func objectTextModules(member domain.StoreMember, program domain.LoyaltyProgram) []*walletobjects.TextModuleData {
 	remaining := program.StampGoal - member.StampProgress

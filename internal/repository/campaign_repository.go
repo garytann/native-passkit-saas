@@ -90,6 +90,28 @@ func (r CampaignRepository) ListCampaignsByMerchant(ctx context.Context, merchan
 	return campaigns, nil
 }
 
+func (r CampaignRepository) CampaignByID(ctx context.Context, campaignID string) (domain.Campaign, error) {
+	var row campaignModel
+	if err := r.db.WithContext(ctx).Where("campaign_id = ?", campaignID).Take(&row).Error; err != nil {
+		return domain.Campaign{}, fmt.Errorf("get campaign by ID: %w", err)
+	}
+	return campaignFromModel(row), nil
+}
+
+func (r CampaignRepository) LatestActiveCampaignForMerchant(ctx context.Context, merchant string) (domain.Campaign, error) {
+	var row campaignModel
+	if err := r.db.WithContext(ctx).
+		Where("merchant = ? AND status IN ?", merchant, []string{"active", "sent"}).
+		Order("creation_date DESC, campaign_id DESC").
+		Take(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.Campaign{}, nil
+		}
+		return domain.Campaign{}, fmt.Errorf("get latest active campaign for merchant: %w", err)
+	}
+	return campaignFromModel(row), nil
+}
+
 func (r CampaignRepository) CreateDeliveries(ctx context.Context, inputs []domain.CreateCampaignDeliveryInput) ([]domain.CampaignDelivery, error) {
 	rows := make([]campaignDeliveryModel, 0, len(inputs))
 	for _, input := range inputs {

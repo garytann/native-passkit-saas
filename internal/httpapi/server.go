@@ -20,6 +20,7 @@ type MerchantRepository interface {
 type CampaignRepository interface {
 	service.CampaignRepository
 	service.ActiveCampaignRepository
+	service.GoogleCampaignRepository
 }
 
 type WalletRegistrationRepository interface {

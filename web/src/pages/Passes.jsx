@@ -277,13 +277,17 @@ export default function PassesPage({ session }) {
                 <WalletInformation form={form} links={links} />
               </>
             ) : (
-              <div className="google-pass-preview">
-                <div className="google-pass-heading"><div className="google-pass-logo"><WalletCards size={21} /></div><div><strong>{form.programName || "Loyalty Card"}</strong><span>Member rewards</span></div></div>
-                <div className="google-pass-hero"><StampRowPreview iconKey={stampIconKey} sourceFile={stampIconFile} sourceURL={stampArtworkURL} goal={form.stampGoal} progress={previewProgress} /></div>
-                <div className="google-pass-balances"><div><span>Stamps</span><strong>{previewProgress}</strong></div><div><span>Rewards</span><strong>0</strong></div></div>
-                <div className="google-pass-next"><span>Next reward</span><strong>{previewRewardProgress}</strong></div>
-                <div className="google-pass-barcode"><span aria-hidden="true"><span /><span /><span /></span><small>Member QR code</small></div>
-              </div>
+              <>
+                <div className="google-pass-preview">
+                  <div className="google-pass-heading"><div className="google-pass-logo"><WalletCards size={21} /></div><div><strong>{form.programName || "Loyalty Card"}</strong><span>Member rewards</span></div></div>
+                  <div className="google-pass-hero"><StampRowPreview iconKey={stampIconKey} sourceFile={stampIconFile} sourceURL={stampArtworkURL} goal={form.stampGoal} progress={previewProgress} /></div>
+                  <div className="google-pass-balances"><div><span>Stamps</span><strong>{previewProgress}</strong></div><div><span>Rewards</span><strong>0</strong></div></div>
+                  <div className="google-pass-next"><span>Next reward</span><strong>{previewRewardProgress}</strong></div>
+                  <div className="google-pass-barcode"><span aria-hidden="true"><span /><span /><span /></span><small>Member QR code</small></div>
+                </div>
+                <div className="wallet-preview-divider"><span>Pass details</span></div>
+                <GoogleWalletInformation form={form} links={links} showPromotion={design.campaign_display_mode !== "none"} />
+              </>
             )}
           </aside>
         </div>
@@ -294,6 +298,10 @@ export default function PassesPage({ session }) {
 
 function WalletInformation({ form, links }) {
   return <div className="wallet-details-sheet"><PreviewItem label="Latest Promotion" value="Managed from Campaigns" muted /><PreviewItem label="How to Collect Stamps" value={form.stampInstructions} /><PreviewItem label="Reward Details" value={form.rewardDetails} /><PreviewItem label="Rewards Earned" value="Calculated for each member" muted /><PreviewItem label="Stamps Until Next Reward" value="Calculated for each member" muted />{links.map((link) => <PreviewItem key={link.link_type} label={link.label} value={link.url} link />)}<PreviewItem label="Questions? Contact the Merchant" value={form.supportText} /><PreviewItem label="Terms and Conditions" value={form.termsText} /><PreviewItem label="Powered by Just Loyalty" value="www.just-loyalty.com" link /></div>;
+}
+
+function GoogleWalletInformation({ form, links, showPromotion }) {
+  return <div className="wallet-details-sheet">{showPromotion ? <PreviewItem label="Latest Promotion" value={"Campaign title\n\nFull campaign message from Campaigns"} muted /> : null}<PreviewItem label="How to collect stamps" value={form.stampInstructions} /><PreviewItem label="Reward details" value={form.rewardDetails} />{links.map((link) => <PreviewItem key={link.link_type} label={link.label} value={link.url} link />)}<PreviewItem label="Customer support" value={form.supportText} /><PreviewItem label="Terms and conditions" value={form.termsText} /><PreviewItem label="Powered by" value="Just Loyalty" /></div>;
 }
 
 function PassFormSection({ title, description, children }) {
