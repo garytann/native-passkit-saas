@@ -28,7 +28,7 @@ var errRouteNotFound = errors.New("pass route not found")
 type HealthController struct{}
 
 func (HealthController) Check(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "healthy"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "healthy as it is!"})
 }
 
 type CustomerController struct {
