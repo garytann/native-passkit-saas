@@ -1,0 +1,173 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.23.x"
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Check Go formatting
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l $(git ls-files '*.go'))"
+          if [ -n "$unformatted" ]; then
+            echo "The following Go files require gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Run Go vet
+        run: go vet ./...
+
+      - name: Run Go tests
+        run: go test ./...
+
+      - name: Build backend
+        run: go build -o /tmp/passkit-server ./cmd/server
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: web
+        run: npm run build
+
+  database:
+    name: Database
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: passkit_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d passkit_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Apply migrations twice
+        shell: bash
+        run: |
+          docker run --rm \
+            --network host \
+            -e PGPASSWORD=postgres \
+            -v "${{ github.workspace }}/migrations:/migrations:ro" \
+            postgres:16-alpine \
+            sh -ec '
+              for pass in 1 2; do
+                echo "Migration pass ${pass}"
+
+                for file in /migrations/*.sql; do
+                  echo "Applying ${file}"
+                  psql \
+                    -h 127.0.0.1 \
+                    -U postgres \
+                    -d passkit_ci \
+                    -v ON_ERROR_STOP=1 \
+                    -f "${file}"
+                done
+              done
+            '
+
+  containers:
+    name: Containers
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Validate production Compose configuration
+        shell: bash
+        run: |
+          GOOGLE_WALLET_CREDENTIALS_FILE=./google-credentials/disabled.json \
+          docker compose \
+            --env-file .env.example \
+            -f docker-compose.yml \
+            config >/dev/null
+
+      - name: Validate UAT Compose configuration
+        shell: bash
+        run: |
+          GOOGLE_WALLET_CREDENTIALS_FILE=./google-credentials/disabled.json \
+          docker compose \
+            --env-file .env.uat.example \
+            -f docker-compose.uat.yml \
+            config >/dev/null
+
+      - name: Build backend image
+        run: |
+          docker build \
+            --file Dockerfile.backend \
+            --tag just-loyalty-backend:ci \
+            .
+
+      - name: Build frontend image
+        run: |
+          docker build \
+            --file web/Dockerfile \
+            --tag just-loyalty-web:ci \
+            web
+
+      - name: Build landing image
+        run: |
+          docker build \
+            --file landing/Dockerfile \
+            --tag just-loyalty-landing:ci \
+            landing
