@@ -4,7 +4,7 @@ import {
   Check,
 } from "lucide-react";
 import BrandLogo from "../components/BrandLogo.jsx";
-import { API_BASE, API_VERSION_PREFIX, SAAS_BRAND_NAME } from "../config/api";
+import { API_BASE, API_VERSION_PREFIX, PENDING_MERCHANT_VERIFICATION_KEY, SAAS_BRAND_NAME } from "../config/api";
 
 export default function MerchantsRegisterPage() {
   const [registration, setRegistration] = useState({
@@ -14,7 +14,6 @@ export default function MerchantsRegisterPage() {
     email: "",
     password: "",
   });
-  const [createdMerchant, setCreatedMerchant] = useState(null);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
 
@@ -44,8 +43,12 @@ export default function MerchantsRegisterPage() {
         throw new Error(payload?.error ?? `Registration endpoint returned ${response.status}`);
       }
       const data = await response.json();
-      setCreatedMerchant(data.merchant);
-      setStatus("ready");
+      window.sessionStorage.setItem(PENDING_MERCHANT_VERIFICATION_KEY, JSON.stringify({
+        merchantEmail: data.merchant?.merchant_email ?? registration.email,
+        expiresAt: data.verification?.expires_at ?? null,
+        resendAvailableAt: data.verification?.resend_available_at ?? null,
+      }));
+      window.location.href = "/merchants/verify-email";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to register merchant");
       setStatus("error");
@@ -74,25 +77,7 @@ export default function MerchantsRegisterPage() {
         </section>
 
         <section className="registration-card merchant-registration-card" aria-label="Merchant registration">
-          {status === "ready" && createdMerchant ? (
-            <div className="success-panel">
-              <div className="success-icon">
-                <Check size={28} />
-              </div>
-              <span className="eyebrow">Account created</span>
-              <h2>Welcome to {SAAS_BRAND_NAME}</h2>
-              <p>
-                {createdMerchant.merchant} is registered. Payment status is currently <strong>{createdMerchant.payment_status}</strong>.
-              </p>
-              <div className="success-actions">
-                <a className="primary-action" href="/login">
-                  Go to Login
-                  <ArrowRight size={18} />
-                </a>
-              </div>
-            </div>
-          ) : (
-            <>
+          <>
               <div className="panel-heading compact-heading">
                 <div>
                   <span className="eyebrow">Merchant registration</span>
@@ -170,8 +155,7 @@ export default function MerchantsRegisterPage() {
               <p className="auth-switch public-note">
                 Already have an account? <a href="/login">Login</a>
               </p>
-            </>
-          )}
+          </>
         </section>
       </main>
     </div>

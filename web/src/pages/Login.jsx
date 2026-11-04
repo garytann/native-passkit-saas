@@ -6,7 +6,7 @@ import {
   Mail,
 } from "lucide-react";
 import BrandLogo from "../components/BrandLogo.jsx";
-import { API_BASE, API_VERSION_PREFIX, MERCHANT_SESSION_KEY } from "../config/api";
+import { API_BASE, API_VERSION_PREFIX, MERCHANT_SESSION_KEY, PENDING_MERCHANT_VERIFICATION_KEY } from "../config/api";
 
 export default function LoginPage() {
   const [credentials, setCredentials] = useState({
@@ -16,6 +16,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
+  const [verificationRequired, setVerificationRequired] = useState(false);
 
   function updateCredentials(field, value) {
     setCredentials((current) => ({ ...current, [field]: value }));
@@ -25,6 +26,7 @@ export default function LoginPage() {
     event.preventDefault();
     setStatus("loading");
     setError("");
+    setVerificationRequired(false);
 
     try {
       const response = await fetch(`${API_BASE}${API_VERSION_PREFIX}/merchants/login`, {
@@ -37,7 +39,12 @@ export default function LoginPage() {
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        throw new Error(payload?.error ?? `Login endpoint returned ${response.status}`);
+        const message = payload?.error ?? `Login endpoint returned ${response.status}`;
+        if (response.status === 403 && message === "email verification required") {
+          window.sessionStorage.setItem(PENDING_MERCHANT_VERIFICATION_KEY, JSON.stringify({ merchantEmail: credentials.username }));
+          setVerificationRequired(true);
+        }
+        throw new Error(message);
       }
       const data = await response.json();
       window.localStorage.setItem(MERCHANT_SESSION_KEY, JSON.stringify({
@@ -114,6 +121,11 @@ export default function LoginPage() {
           </form>
 
           {error ? <p className="form-error auth-error">{error}</p> : null}
+          {verificationRequired ? (
+            <p className="auth-switch verification-login-link">
+              <a href="/merchants/verify-email">Verify your email or request a new code</a>
+            </p>
+          ) : null}
 
           <p className="auth-switch">
             Don't have an account? <a href="/merchants/register">Sign up</a>

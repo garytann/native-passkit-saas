@@ -2,12 +2,14 @@ import React from "react";
 import App from "./App.jsx";
 import LoginPage from "./pages/Login.jsx";
 import MerchantsRegisterPage from "./pages/MerchantsRegister.jsx";
+import MerchantEmailVerificationPage from "./pages/MerchantEmailVerification.jsx";
 import MembersRegisterPage from "./pages/MembersRegister.jsx";
 import AdminLoginPage from "./pages/AdminLogin.jsx";
 import AdminConsolePage from "./pages/AdminConsole.jsx";
 
 const CUSTOMER_REGISTRATION_PATH = "/members/register";
 const MERCHANT_REGISTRATION_PATH = "/merchants/register";
+const MERCHANT_VERIFICATION_PATH = "/merchants/verify-email";
 const DASHBOARD_PATH = "/dashboard";
 
 export default function AppRouter() {
@@ -34,6 +36,10 @@ export default function AppRouter() {
 
   if (isPath(window.location.pathname, MERCHANT_REGISTRATION_PATH)) {
     return <MerchantsRegisterPage />;
+  }
+
+  if (isPath(window.location.pathname, MERCHANT_VERIFICATION_PATH)) {
+    return <MerchantEmailVerificationPage />;
   }
 
   if (isPath(window.location.pathname, CUSTOMER_REGISTRATION_PATH)) {
