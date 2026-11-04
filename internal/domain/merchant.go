@@ -27,15 +27,16 @@ type MerchantOnboardingStatus struct {
 }
 
 type Merchant struct {
-	MerchantID    string    `json:"merchant_id"`
-	CreationDate  time.Time `json:"creation_date"`
-	FirstName     string    `json:"first_name"`
-	LastName      string    `json:"last_name"`
-	Merchant      string    `json:"merchant"`
-	MerchantSlug  string    `json:"merchant_slug"`
-	MerchantEmail string    `json:"merchant_email"`
-	Status        string    `json:"status"`
-	PaymentStatus string    `json:"payment_status"`
+	MerchantID      string     `json:"merchant_id"`
+	CreationDate    time.Time  `json:"creation_date"`
+	FirstName       string     `json:"first_name"`
+	LastName        string     `json:"last_name"`
+	Merchant        string     `json:"merchant"`
+	MerchantSlug    string     `json:"merchant_slug"`
+	MerchantEmail   string     `json:"merchant_email"`
+	Status          string     `json:"status"`
+	PaymentStatus   string     `json:"payment_status"`
+	EmailVerifiedAt *time.Time `json:"email_verified_at,omitempty"`
 }
 
 type CreateMerchantInput struct {
@@ -49,26 +50,28 @@ type CreateMerchantInput struct {
 }
 
 type MerchantCredentials struct {
-	MerchantID    string
-	FirstName     string
-	LastName      string
-	Merchant      string
-	MerchantSlug  string
-	MerchantEmail string
-	PasswordHash  string
-	Status        string
-	PaymentStatus string
+	MerchantID      string
+	FirstName       string
+	LastName        string
+	Merchant        string
+	MerchantSlug    string
+	MerchantEmail   string
+	PasswordHash    string
+	Status          string
+	PaymentStatus   string
+	EmailVerifiedAt *time.Time
 }
 
 func (m MerchantCredentials) PublicMerchant() Merchant {
 	return Merchant{
-		MerchantID:    m.MerchantID,
-		FirstName:     m.FirstName,
-		LastName:      m.LastName,
-		Merchant:      m.Merchant,
-		MerchantSlug:  m.MerchantSlug,
-		MerchantEmail: m.MerchantEmail,
-		Status:        m.Status,
-		PaymentStatus: m.PaymentStatus,
+		MerchantID:      m.MerchantID,
+		FirstName:       m.FirstName,
+		LastName:        m.LastName,
+		Merchant:        m.Merchant,
+		MerchantSlug:    m.MerchantSlug,
+		MerchantEmail:   m.MerchantEmail,
+		Status:          m.Status,
+		PaymentStatus:   m.PaymentStatus,
+		EmailVerifiedAt: m.EmailVerifiedAt,
 	}
 }

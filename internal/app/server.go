@@ -20,6 +20,7 @@ func NewHTTPHandler(ctx context.Context, cfg config.Config) (http.Handler, func(
 	var walletPassRepo httpapi.WalletPassRepository
 	var appleWalletRepo httpapi.AppleWalletRepository
 	var googleWalletRepo httpapi.GoogleWalletRepository
+	var emailRepo httpapi.EmailRepository
 	cleanup := func() {}
 
 	if cfg.DatabaseURL == "" {
@@ -45,6 +46,7 @@ func NewHTTPHandler(ctx context.Context, cfg config.Config) (http.Handler, func(
 		walletPassRepo = repository.NewWalletPassRepository(db)
 		appleWalletRepo = repository.NewAppleWalletRepository(db)
 		googleWalletRepo = repository.NewGoogleWalletRepository(db)
+		emailRepo = repository.NewEmailRepository(db)
 	}
 	googleWalletService, err := service.NewGoogleWalletService(ctx, cfg, googleWalletRepo, memberRepo, merchantRepo, campaignRepo)
 	if err != nil {
@@ -54,6 +56,21 @@ func NewHTTPHandler(ctx context.Context, cfg config.Config) (http.Handler, func(
 	if googleWalletService.Enabled() {
 		go googleWalletService.RunSyncWorker(ctx)
 	}
-	server := httpapi.NewServerWithAppleWalletRepository(cfg, memberRepo, merchantRepo, campaignRepo, walletRegistrationRepo, walletPassRepo, appleWalletRepo).WithGoogleWalletService(&googleWalletService)
+	smtpSender, err := service.NewSMTPEmailSender(cfg)
+	if err != nil {
+		cleanup()
+		return nil, func() {}, err
+	}
+	emailService, err := service.NewEmailService(cfg, emailRepo, smtpSender)
+	if err != nil {
+		cleanup()
+		return nil, func() {}, err
+	}
+	if emailService.Enabled() {
+		go emailService.RunWorker(ctx)
+	}
+	server := httpapi.NewServerWithAppleWalletRepository(cfg, memberRepo, merchantRepo, campaignRepo, walletRegistrationRepo, walletPassRepo, appleWalletRepo).
+		WithGoogleWalletService(&googleWalletService).
+		WithEmailService(&emailService)
 	return server.Routes(), cleanup, nil
 }
