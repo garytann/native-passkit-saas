@@ -48,3 +48,5 @@ volumes:
 secrets:
   google_wallet_service_account:
     file: ${GOOGLE_WALLET_CREDENTIALS_FILE:-./google-credentials/disabled.json}
+  email_smtp_password:
+    file: ${EMAIL_SMTP_PASSWORD_SOURCE_FILE:-./email-credentials/disabled}
