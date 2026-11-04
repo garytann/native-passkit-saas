@@ -4,3 +4,4 @@ export const DEFAULT_MERCHANT = import.meta.env.VITE_DEFAULT_MERCHANT ?? "Just L
 export const SAAS_BRAND_NAME = "JUST LOYALTY";
 export const MERCHANT_SESSION_KEY = "just_loyalty_merchant_session";
 export const ADMIN_SESSION_KEY = "just_loyalty_admin_session";
+export const PENDING_MERCHANT_VERIFICATION_KEY = "just_loyalty_pending_merchant_verification";

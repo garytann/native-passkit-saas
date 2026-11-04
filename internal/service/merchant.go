@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"net/mail"
 	"regexp"
 	"strings"
 	"time"
@@ -21,6 +22,13 @@ type MerchantRepository interface {
 	UpdatePaymentStatus(ctx context.Context, merchantID string, status string) (domain.Merchant, error)
 }
 
+type MerchantEmailVerificationService interface {
+	Enabled() bool
+	CreatePendingRegistration(context.Context, domain.CreateMerchantInput, domain.CreateAppleWalletIssuerInput) (domain.EmailVerificationResult, error)
+	VerifyMerchantEmail(context.Context, string, string) (VerifyEmailResult, error)
+	ResendVerification(context.Context, string) error
+}
+
 type RegisterMerchantInput struct {
 	FirstName     string
 	LastName      string
@@ -32,10 +40,11 @@ type RegisterMerchantInput struct {
 var slugSeparators = regexp.MustCompile(`[^a-z0-9]+`)
 
 type MerchantService struct {
-	repo          MerchantRepository
-	tokenManager  TokenManager
-	defaultTeamID string
-	timeout       time.Duration
+	repo              MerchantRepository
+	tokenManager      TokenManager
+	defaultTeamID     string
+	timeout           time.Duration
+	emailVerification MerchantEmailVerificationService
 }
 
 type LoginMerchantInput struct {
@@ -46,6 +55,12 @@ type LoginMerchantInput struct {
 type LoginMerchantResult struct {
 	Merchant domain.Merchant
 	Token    string
+}
+
+type RegisterMerchantResult struct {
+	Merchant              domain.Merchant
+	VerificationExpiresAt time.Time
+	ResendAvailableAt     time.Time
 }
 
 func NewMerchantService(repo MerchantRepository, tokenManager TokenManager, defaultTeamID ...string) MerchantService {
@@ -61,9 +76,17 @@ func NewMerchantService(repo MerchantRepository, tokenManager TokenManager, defa
 	}
 }
 
-func (s MerchantService) RegisterMerchant(ctx context.Context, input RegisterMerchantInput) (domain.Merchant, error) {
+func (s MerchantService) WithEmailVerification(verification MerchantEmailVerificationService) MerchantService {
+	s.emailVerification = verification
+	return s
+}
+
+func (s MerchantService) RegisterMerchant(ctx context.Context, input RegisterMerchantInput) (RegisterMerchantResult, error) {
 	if s.repo == nil {
-		return domain.Merchant{}, ErrRepositoryUnavailable
+		return RegisterMerchantResult{}, ErrRepositoryUnavailable
+	}
+	if s.emailVerification == nil || !s.emailVerification.Enabled() {
+		return RegisterMerchantResult{}, ErrEmailUnavailable
 	}
 
 	input.FirstName = strings.TrimSpace(input.FirstName)
@@ -71,27 +94,27 @@ func (s MerchantService) RegisterMerchant(ctx context.Context, input RegisterMer
 	input.Company = strings.TrimSpace(input.Company)
 	input.MerchantEmail = strings.TrimSpace(strings.ToLower(input.MerchantEmail))
 	if err := validateRegisterMerchantInput(input); err != nil {
-		return domain.Merchant{}, err
+		return RegisterMerchantResult{}, err
 	}
 
 	merchantID, err := domain.NewReadableMerchantID()
 	if err != nil {
-		return domain.Merchant{}, err
+		return RegisterMerchantResult{}, err
 	}
 	issuerID, err := domain.NewAppleWalletIssuerID()
 	if err != nil {
-		return domain.Merchant{}, err
+		return RegisterMerchantResult{}, err
 	}
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return domain.Merchant{}, fmt.Errorf("hash merchant password: %w", err)
+		return RegisterMerchantResult{}, fmt.Errorf("hash merchant password: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	merchant, err := s.repo.CreateWithPendingWalletIssuer(ctx, domain.CreateMerchantInput{
+	registration, err := s.emailVerification.CreatePendingRegistration(ctx, domain.CreateMerchantInput{
 		MerchantID:    merchantID,
 		FirstName:     input.FirstName,
 		LastName:      input.LastName,
@@ -108,10 +131,32 @@ func (s MerchantService) RegisterMerchant(ctx context.Context, input RegisterMer
 		Status:           "pending",
 	})
 	if err != nil {
-		return domain.Merchant{}, fmt.Errorf("register merchant: %w", err)
+		return RegisterMerchantResult{}, fmt.Errorf("register merchant: %w", err)
 	}
 
-	return merchant, nil
+	return RegisterMerchantResult{
+		Merchant:              registration.Merchant,
+		VerificationExpiresAt: registration.Verification.ExpiresAt,
+		ResendAvailableAt:     registration.Verification.ResendAvailableAt,
+	}, nil
+}
+
+func (s MerchantService) VerifyMerchantEmail(ctx context.Context, email, pin string) (VerifyEmailResult, error) {
+	if s.emailVerification == nil || !s.emailVerification.Enabled() {
+		return VerifyEmailResult{}, ErrEmailUnavailable
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	return s.emailVerification.VerifyMerchantEmail(ctx, email, pin)
+}
+
+func (s MerchantService) ResendMerchantEmailVerification(ctx context.Context, email string) error {
+	if s.emailVerification == nil || !s.emailVerification.Enabled() {
+		return ErrEmailUnavailable
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	return s.emailVerification.ResendVerification(ctx, email)
 }
 
 func (s MerchantService) MerchantBySlug(ctx context.Context, slug string) (domain.Merchant, error) {
@@ -145,7 +190,14 @@ func (s MerchantService) MerchantByID(ctx context.Context, merchantID string) (d
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
-	return s.repo.GetByID(ctx, merchantID)
+	merchant, err := s.repo.GetByID(ctx, merchantID)
+	if err != nil {
+		return domain.Merchant{}, err
+	}
+	if merchant.EmailVerifiedAt == nil || merchant.Status == "pending_verification" {
+		return domain.Merchant{}, ErrForbidden
+	}
+	return merchant, nil
 }
 
 func (s MerchantService) ListMerchants(ctx context.Context) ([]domain.Merchant, error) {
@@ -194,6 +246,12 @@ func (s MerchantService) LoginMerchant(ctx context.Context, input LoginMerchantI
 	if err := bcrypt.CompareHashAndPassword([]byte(merchant.PasswordHash), []byte(input.Password)); err != nil {
 		return LoginMerchantResult{}, domain.ErrInvalidMerchantCredentials
 	}
+	if merchant.EmailVerifiedAt == nil || merchant.Status == "pending_verification" {
+		return LoginMerchantResult{}, domain.ErrMerchantEmailNotVerified
+	}
+	if merchant.Status != "active" {
+		return LoginMerchantResult{}, ErrForbidden
+	}
 
 	token, err := s.tokenManager.IssueMerchantToken(merchant.MerchantID, merchant.Merchant)
 	if err != nil {
@@ -224,7 +282,7 @@ func validateRegisterMerchantInput(input RegisterMerchantInput) error {
 		return ValidationError{Message: "company is required"}
 	case input.MerchantEmail == "":
 		return ValidationError{Message: "merchant_email is required"}
-	case !strings.Contains(input.MerchantEmail, "@"):
+	case !validEmailAddress(input.MerchantEmail):
 		return ValidationError{Message: "merchant_email must be valid"}
 	case input.Password == "":
 		return ValidationError{Message: "password is required"}
@@ -239,11 +297,17 @@ func validateLoginMerchantInput(input LoginMerchantInput) error {
 	switch {
 	case input.Email == "":
 		return ValidationError{Message: "email is required"}
-	case !strings.Contains(input.Email, "@"):
+	case !validEmailAddress(input.Email):
 		return ValidationError{Message: "email must be valid"}
 	case input.Password == "":
 		return ValidationError{Message: "password is required"}
 	default:
 		return nil
 	}
+}
+
+func validEmailAddress(value string) bool {
+	value = strings.TrimSpace(value)
+	parsed, err := mail.ParseAddress(value)
+	return err == nil && strings.EqualFold(parsed.Address, value)
 }

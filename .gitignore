@@ -28,3 +28,8 @@ proxy/certs/*
 google-credentials/*
 !google-credentials/disabled.json
 !google-credentials/README.md
+
+# Google Workspace SMTP app passwords are deployment credentials.
+email-credentials/*
+!email-credentials/disabled
+!email-credentials/README.md

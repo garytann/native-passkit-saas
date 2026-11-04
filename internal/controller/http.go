@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"native-ios-passkit-wip/internal/domain"
 	"native-ios-passkit-wip/internal/service"
@@ -350,7 +351,23 @@ type registerMerchantRequest struct {
 }
 
 type registerMerchantResponse struct {
-	Merchant domain.Merchant `json:"merchant"`
+	Merchant     domain.Merchant                 `json:"merchant"`
+	Verification merchantEmailVerificationStatus `json:"verification"`
+}
+
+type merchantEmailVerificationStatus struct {
+	Required          bool      `json:"required"`
+	ExpiresAt         time.Time `json:"expires_at"`
+	ResendAvailableAt time.Time `json:"resend_available_at"`
+}
+
+type verifyMerchantEmailRequest struct {
+	MerchantEmail string `json:"merchant_email"`
+	PIN           string `json:"pin"`
+}
+
+type resendMerchantVerificationRequest struct {
+	MerchantEmail string `json:"merchant_email"`
 }
 
 type loginMerchantRequest struct {
@@ -370,7 +387,7 @@ func (c MerchantController) RegisterMerchant(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	merchant, err := c.merchants.RegisterMerchant(r.Context(), service.RegisterMerchantInput{
+	result, err := c.merchants.RegisterMerchant(r.Context(), service.RegisterMerchantInput{
 		FirstName:     request.FirstName,
 		LastName:      request.LastName,
 		Company:       request.Company,
@@ -383,8 +400,36 @@ func (c MerchantController) RegisterMerchant(w http.ResponseWriter, r *http.Requ
 	}
 
 	writeJSON(w, http.StatusCreated, registerMerchantResponse{
-		Merchant: merchant,
+		Merchant:     result.Merchant,
+		Verification: merchantEmailVerificationStatus{Required: true, ExpiresAt: result.VerificationExpiresAt, ResendAvailableAt: result.ResendAvailableAt},
 	})
+}
+
+func (c MerchantController) VerifyMerchantEmail(w http.ResponseWriter, r *http.Request) {
+	var request verifyMerchantEmailRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request body")
+		return
+	}
+	result, err := c.merchants.VerifyMerchantEmail(r.Context(), request.MerchantEmail, request.PIN)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"merchant": result.Merchant, "verified": true, "already_verified": result.AlreadyVerified})
+}
+
+func (c MerchantController) ResendMerchantVerification(w http.ResponseWriter, r *http.Request) {
+	var request resendMerchantVerificationRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request body")
+		return
+	}
+	if err := c.merchants.ResendMerchantEmailVerification(r.Context(), request.MerchantEmail); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"message": "If the account is pending verification, a new code will be sent."})
 }
 
 func (c MerchantController) LoginMerchant(w http.ResponseWriter, r *http.Request) {
@@ -743,6 +788,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrRepositoryUnavailable):
 		writeError(w, http.StatusServiceUnavailable, err.Error())
+	case errors.Is(err, service.ErrEmailUnavailable):
+		writeError(w, http.StatusServiceUnavailable, err.Error())
 	case errors.Is(err, service.ErrUnauthorized):
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 	case errors.Is(err, service.ErrForbidden):
@@ -753,6 +800,12 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "merchant or merchant_email already exists")
 	case errors.Is(err, domain.ErrInvalidMerchantCredentials):
 		writeError(w, http.StatusUnauthorized, "invalid email or password")
+	case errors.Is(err, domain.ErrMerchantEmailNotVerified):
+		writeError(w, http.StatusForbidden, "email verification required")
+	case errors.Is(err, domain.ErrEmailVerificationInvalid), errors.Is(err, domain.ErrEmailVerificationNotFound):
+		writeError(w, http.StatusBadRequest, "invalid or expired verification code")
+	case errors.Is(err, domain.ErrEmailVerificationAttemptsExhausted):
+		writeError(w, http.StatusTooManyRequests, "verification attempts exhausted; request a new code")
 	case errors.Is(err, domain.ErrMerchantNotFound):
 		writeError(w, http.StatusNotFound, "merchant not found")
 	case errors.Is(err, domain.ErrAppleWalletIssuerNotFound):

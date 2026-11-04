@@ -16,16 +16,17 @@ type MerchantRepository struct {
 }
 
 type merchantModel struct {
-	MerchantID    string    `gorm:"column:merchant_id;primaryKey"`
-	CreationDate  time.Time `gorm:"column:creation_date;default:now()"`
-	FirstName     string    `gorm:"column:first_name;default:''"`
-	LastName      string    `gorm:"column:last_name;default:''"`
-	Merchant      string    `gorm:"column:merchant;uniqueIndex;not null"`
-	MerchantSlug  string    `gorm:"column:merchant_slug;uniqueIndex"`
-	MerchantEmail string    `gorm:"column:merchant_email;uniqueIndex;not null"`
-	PasswordHash  string    `gorm:"column:password_hash;default:'';not null"`
-	Status        string    `gorm:"column:status;default:active"`
-	PaymentStatus string    `gorm:"column:payment_status;default:inactive;not null"`
+	MerchantID      string     `gorm:"column:merchant_id;primaryKey"`
+	CreationDate    time.Time  `gorm:"column:creation_date;default:now()"`
+	FirstName       string     `gorm:"column:first_name;default:''"`
+	LastName        string     `gorm:"column:last_name;default:''"`
+	Merchant        string     `gorm:"column:merchant;uniqueIndex;not null"`
+	MerchantSlug    string     `gorm:"column:merchant_slug;uniqueIndex"`
+	MerchantEmail   string     `gorm:"column:merchant_email;uniqueIndex;not null"`
+	PasswordHash    string     `gorm:"column:password_hash;default:'';not null"`
+	Status          string     `gorm:"column:status;default:pending_verification"`
+	PaymentStatus   string     `gorm:"column:payment_status;default:inactive;not null"`
+	EmailVerifiedAt *time.Time `gorm:"column:email_verified_at"`
 }
 
 func (merchantModel) TableName() string {
@@ -83,6 +84,7 @@ func (r MerchantRepository) create(ctx context.Context, db *gorm.DB, input domai
 		MerchantSlug:  input.MerchantSlug,
 		MerchantEmail: input.MerchantEmail,
 		PasswordHash:  input.PasswordHash,
+		Status:        "pending_verification",
 		PaymentStatus: "inactive",
 	}
 
@@ -94,15 +96,16 @@ func (r MerchantRepository) create(ctx context.Context, db *gorm.DB, input domai
 	}
 
 	return domain.Merchant{
-		MerchantID:    merchant.MerchantID,
-		CreationDate:  merchant.CreationDate,
-		FirstName:     merchant.FirstName,
-		LastName:      merchant.LastName,
-		Merchant:      merchant.Merchant,
-		MerchantSlug:  merchant.MerchantSlug,
-		MerchantEmail: merchant.MerchantEmail,
-		Status:        merchant.Status,
-		PaymentStatus: merchant.PaymentStatus,
+		MerchantID:      merchant.MerchantID,
+		CreationDate:    merchant.CreationDate,
+		FirstName:       merchant.FirstName,
+		LastName:        merchant.LastName,
+		Merchant:        merchant.Merchant,
+		MerchantSlug:    merchant.MerchantSlug,
+		MerchantEmail:   merchant.MerchantEmail,
+		Status:          merchant.Status,
+		PaymentStatus:   merchant.PaymentStatus,
+		EmailVerifiedAt: merchant.EmailVerifiedAt,
 	}, nil
 }
 
@@ -116,22 +119,23 @@ func (r MerchantRepository) GetByEmail(ctx context.Context, email string) (domai
 	}
 
 	return domain.MerchantCredentials{
-		MerchantID:    merchant.MerchantID,
-		FirstName:     merchant.FirstName,
-		LastName:      merchant.LastName,
-		Merchant:      merchant.Merchant,
-		MerchantSlug:  merchant.MerchantSlug,
-		MerchantEmail: merchant.MerchantEmail,
-		PasswordHash:  merchant.PasswordHash,
-		Status:        merchant.Status,
-		PaymentStatus: merchant.PaymentStatus,
+		MerchantID:      merchant.MerchantID,
+		FirstName:       merchant.FirstName,
+		LastName:        merchant.LastName,
+		Merchant:        merchant.Merchant,
+		MerchantSlug:    merchant.MerchantSlug,
+		MerchantEmail:   merchant.MerchantEmail,
+		PasswordHash:    merchant.PasswordHash,
+		Status:          merchant.Status,
+		PaymentStatus:   merchant.PaymentStatus,
+		EmailVerifiedAt: merchant.EmailVerifiedAt,
 	}, nil
 }
 
 func (r MerchantRepository) GetBySlug(ctx context.Context, slug string) (domain.Merchant, error) {
 	var merchant merchantModel
 	if err := r.db.WithContext(ctx).
-		Where("merchant_slug = ? AND password_hash <> ''", slug).
+		Where("merchant_slug = ? AND password_hash <> '' AND email_verified_at IS NOT NULL AND status = 'active'", slug).
 		First(&merchant).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return domain.Merchant{}, domain.ErrMerchantNotFound
@@ -140,15 +144,16 @@ func (r MerchantRepository) GetBySlug(ctx context.Context, slug string) (domain.
 	}
 
 	return domain.Merchant{
-		MerchantID:    merchant.MerchantID,
-		CreationDate:  merchant.CreationDate,
-		FirstName:     merchant.FirstName,
-		LastName:      merchant.LastName,
-		Merchant:      merchant.Merchant,
-		MerchantSlug:  merchant.MerchantSlug,
-		MerchantEmail: merchant.MerchantEmail,
-		Status:        merchant.Status,
-		PaymentStatus: merchant.PaymentStatus,
+		MerchantID:      merchant.MerchantID,
+		CreationDate:    merchant.CreationDate,
+		FirstName:       merchant.FirstName,
+		LastName:        merchant.LastName,
+		Merchant:        merchant.Merchant,
+		MerchantSlug:    merchant.MerchantSlug,
+		MerchantEmail:   merchant.MerchantEmail,
+		Status:          merchant.Status,
+		PaymentStatus:   merchant.PaymentStatus,
+		EmailVerifiedAt: merchant.EmailVerifiedAt,
 	}, nil
 }
 
@@ -166,7 +171,7 @@ func (r MerchantRepository) GetByID(ctx context.Context, merchantID string) (dom
 func (r MerchantRepository) List(ctx context.Context) ([]domain.Merchant, error) {
 	var models []merchantModel
 	if err := r.db.WithContext(ctx).
-		Where("password_hash <> ''").
+		Where("password_hash <> '' AND email_verified_at IS NOT NULL").
 		Order("creation_date DESC").
 		Find(&models).Error; err != nil {
 		return nil, fmt.Errorf("list merchants: %w", err)
@@ -193,15 +198,16 @@ func (r MerchantRepository) UpdatePaymentStatus(ctx context.Context, merchantID 
 
 func merchantFromModel(merchant merchantModel) domain.Merchant {
 	return domain.Merchant{
-		MerchantID:    merchant.MerchantID,
-		CreationDate:  merchant.CreationDate,
-		FirstName:     merchant.FirstName,
-		LastName:      merchant.LastName,
-		Merchant:      merchant.Merchant,
-		MerchantSlug:  merchant.MerchantSlug,
-		MerchantEmail: merchant.MerchantEmail,
-		Status:        merchant.Status,
-		PaymentStatus: merchant.PaymentStatus,
+		MerchantID:      merchant.MerchantID,
+		CreationDate:    merchant.CreationDate,
+		FirstName:       merchant.FirstName,
+		LastName:        merchant.LastName,
+		Merchant:        merchant.Merchant,
+		MerchantSlug:    merchant.MerchantSlug,
+		MerchantEmail:   merchant.MerchantEmail,
+		Status:          merchant.Status,
+		PaymentStatus:   merchant.PaymentStatus,
+		EmailVerifiedAt: merchant.EmailVerifiedAt,
 	}
 }
 

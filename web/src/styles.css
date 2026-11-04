@@ -3088,6 +3088,103 @@ textarea:focus {
   margin-top: 8px;
 }
 
+.verification-layout {
+  width: min(520px, calc(100% - 32px));
+  min-height: calc(100vh - 130px);
+  margin: 0 auto;
+  display: grid;
+  align-items: center;
+  padding: 24px 0 56px;
+}
+
+.verification-card {
+  padding: 34px;
+}
+
+.verification-heading {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  margin-bottom: 26px;
+}
+
+.verification-heading h1,
+.success-panel h1 {
+  font-size: 30px;
+  line-height: 1.15;
+}
+
+.verification-heading p {
+  color: #59616e;
+  line-height: 1.6;
+}
+
+.verification-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: #5434f5;
+  background: #f1eeff;
+}
+
+.verification-pin-input {
+  text-align: center;
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: 8px;
+}
+
+.verification-actions {
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.text-action {
+  border: 0;
+  padding: 4px 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #5434f5;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.text-action:disabled {
+  color: #9ba2ad;
+  cursor: not-allowed;
+}
+
+.form-success {
+  margin-top: 14px;
+  color: #245d52;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.verification-login-link {
+  margin-top: 10px;
+}
+
+@media (max-width: 540px) {
+  .verification-card {
+    padding: 24px;
+  }
+
+  .verification-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .wallet-actions {
   width: 100%;
   display: grid;

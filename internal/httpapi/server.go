@@ -42,6 +42,10 @@ type GoogleWalletRepository interface {
 	service.GoogleWalletRepository
 }
 
+type EmailRepository interface {
+	service.EmailRepository
+}
+
 type Server struct {
 	cfg                    config.Config
 	memberRepo             MemberRepository
@@ -51,10 +55,16 @@ type Server struct {
 	walletPassRepo         WalletPassRepository
 	appleWalletRepo        AppleWalletRepository
 	googleWalletService    *service.GoogleWalletService
+	emailService           *service.EmailService
 }
 
 func (s Server) WithGoogleWalletService(wallet *service.GoogleWalletService) Server {
 	s.googleWalletService = wallet
+	return s
+}
+
+func (s Server) WithEmailService(email *service.EmailService) Server {
+	s.emailService = email
 	return s
 }
 
@@ -108,6 +118,9 @@ func (s Server) Routes() http.Handler {
 		memberService = memberService.WithRegistrationWallet(*s.googleWalletService)
 	}
 	merchantService := service.NewMerchantService(s.merchantRepo, tokenManager, s.cfg.TeamID)
+	if s.emailService != nil {
+		merchantService = merchantService.WithEmailVerification(*s.emailService)
+	}
 	adminOnboardingService := service.NewAdminOnboardingService(merchantService, appleWalletService)
 	walletService := service.NewWalletService(s.walletRegistrationRepo)
 	campaignService := service.NewCampaignServiceWithPush(s.campaignRepo, s.memberRepo, passService, s.walletRegistrationRepo, apnsSender)
@@ -138,6 +151,8 @@ func (s Server) Routes() http.Handler {
 	v1.HandleFunc("/public/merchants/", method(http.MethodPost, customerController.RegisterPublicMember))
 	v1.HandleFunc("/merchants/register", method(http.MethodPost, merchantController.RegisterMerchant))
 	v1.HandleFunc("/merchants/login", method(http.MethodPost, merchantController.LoginMerchant))
+	v1.HandleFunc("/merchants/verify-email", method(http.MethodPost, merchantController.VerifyMerchantEmail))
+	v1.HandleFunc("/merchants/verification/resend", method(http.MethodPost, merchantController.ResendMerchantVerification))
 	v1.HandleFunc("/merchants/me/apple-wallet/pass-design", merchantPassDesignController.Routes)
 	v1.HandleFunc("/merchants/me/apple-wallet/stamp-icon", merchantPassDesignController.StampIcon)
 	v1.HandleFunc("/merchants/me/loyalty-program", merchantPassDesignController.Routes)
