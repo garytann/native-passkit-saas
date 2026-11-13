@@ -1,7 +1,12 @@
 # Email credentials
 
-Store the Google Workspace SMTP app password in an untracked file in this
-directory. Configure its host path with `EMAIL_SMTP_PASSWORD_SOURCE_FILE`.
+Store the Google Workspace Gmail API service-account JSON for each environment
+in this ignored directory. Configure its host path with
+`GMAIL_API_CREDENTIALS_SOURCE_FILE`.
 
-The backend reads the Docker secret from `/run/secrets/email_smtp_password`.
-Never commit a real app password.
+Docker Compose mounts the selected key at
+`/run/secrets/gmail_api_service_account`. The backend uses domain-wide
+delegation to impersonate `GMAIL_API_USER` with the `gmail.send` scope.
+
+Never commit a real service-account key. `disabled.json` is only a harmless
+placeholder for environments where `EMAIL_ENABLED=false`.
