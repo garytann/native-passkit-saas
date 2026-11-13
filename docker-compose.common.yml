@@ -89,10 +89,8 @@ services:
       GOOGLE_WALLET_ISSUER_ID: ${GOOGLE_WALLET_ISSUER_ID:-}
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/google_wallet_service_account
       EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
-      EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST:-smtp.gmail.com}
-      EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT:-587}
-      EMAIL_SMTP_USERNAME: ${EMAIL_SMTP_USERNAME:-}
-      EMAIL_SMTP_PASSWORD_FILE: /run/secrets/email_smtp_password
+      GMAIL_API_USER: ${GMAIL_API_USER:-}
+      GMAIL_API_CREDENTIALS_FILE: /run/secrets/gmail_api_service_account
       EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-Just Loyalty}
       EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-}
       EMAIL_REPLY_TO: ${EMAIL_REPLY_TO:-}
@@ -100,7 +98,7 @@ services:
       OPENSSL_BIN: ${OPENSSL_BIN:-openssl}
     secrets:
       - google_wallet_service_account
-      - email_smtp_password
+      - gmail_api_service_account
     volumes:
       - ./certs:/app/certs
       - ./pass-assets:/app/pass-assets
