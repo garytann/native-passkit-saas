@@ -29,7 +29,7 @@ google-credentials/*
 !google-credentials/disabled.json
 !google-credentials/README.md
 
-# Google Workspace SMTP app passwords are deployment credentials.
+# Google Workspace Gmail API service-account keys are deployment credentials.
 email-credentials/*
-!email-credentials/disabled
+!email-credentials/disabled.json
 !email-credentials/README.md
