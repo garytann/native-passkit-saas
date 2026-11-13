@@ -92,6 +92,20 @@ func TestVerificationPINIsDeterministicAndSixDigits(t *testing.T) {
 	}
 }
 
+func TestNewEmailServiceValidatesSenderAddresses(t *testing.T) {
+	cfg := emailTestConfig()
+	cfg.EmailFromAddress = "not-an-email"
+	if _, err := NewEmailService(cfg, &emailRepositoryStub{}, &emailSenderStub{}); err == nil || !strings.Contains(err.Error(), "EMAIL_FROM_ADDRESS") {
+		t.Fatalf("invalid sender error = %v", err)
+	}
+
+	cfg = emailTestConfig()
+	cfg.EmailReplyTo = "not-an-email"
+	if _, err := NewEmailService(cfg, &emailRepositoryStub{}, &emailSenderStub{}); err == nil || !strings.Contains(err.Error(), "EMAIL_REPLY_TO") {
+		t.Fatalf("invalid reply-to error = %v", err)
+	}
+}
+
 func TestVerifyMerchantEmailPassesConstantTimeResultToRepository(t *testing.T) {
 	now := time.Now().UTC()
 	merchant := domain.Merchant{MerchantID: "MCH-TEST1234", FirstName: "Gary", Merchant: "Daily Brew", MerchantEmail: "owner@example.com", Status: "pending_verification"}
@@ -177,7 +191,7 @@ func TestProcessEmailJobsCompletesAndRetries(t *testing.T) {
 
 	repo.completedJobID = ""
 	repo.jobs = []domain.EmailJob{job}
-	sender.err = errors.New("temporary SMTP failure")
+	sender.err = errors.New("temporary Gmail API failure")
 	service.processJobs(context.Background())
 	if repo.retriedJobID != job.EmailJobID {
 		t.Fatalf("retried job = %q", repo.retriedJobID)

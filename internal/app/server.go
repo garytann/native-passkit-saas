@@ -56,12 +56,12 @@ func NewHTTPHandler(ctx context.Context, cfg config.Config) (http.Handler, func(
 	if googleWalletService.Enabled() {
 		go googleWalletService.RunSyncWorker(ctx)
 	}
-	smtpSender, err := service.NewSMTPEmailSender(cfg)
+	emailSender, err := service.NewGmailAPIEmailSender(ctx, cfg)
 	if err != nil {
 		cleanup()
 		return nil, func() {}, err
 	}
-	emailService, err := service.NewEmailService(cfg, emailRepo, smtpSender)
+	emailService, err := service.NewEmailService(cfg, emailRepo, emailSender)
 	if err != nil {
 		cleanup()
 		return nil, func() {}, err

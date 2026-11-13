@@ -80,6 +80,12 @@ func NewEmailService(cfg config.Config, repo EmailRepository, sender EmailSender
 	if strings.TrimSpace(cfg.EmailFromAddress) == "" {
 		return EmailService{}, errors.New("EMAIL_FROM_ADDRESS is required when email delivery is enabled")
 	}
+	if !validEmailAddress(cfg.EmailFromAddress) {
+		return EmailService{}, errors.New("EMAIL_FROM_ADDRESS must be a valid email address")
+	}
+	if strings.TrimSpace(cfg.EmailReplyTo) != "" && !validEmailAddress(cfg.EmailReplyTo) {
+		return EmailService{}, errors.New("EMAIL_REPLY_TO must be a valid email address")
+	}
 	return service, nil
 }
 
@@ -194,6 +200,7 @@ func (s EmailService) processJobs(ctx context.Context) {
 		return
 	}
 	for _, job := range jobs {
+		log.Printf("process email job id=%s type=%s attempt=%d", job.EmailJobID, job.JobType, job.Attempts)
 		message, err := s.messageForJob(ctx, job)
 		if errors.Is(err, errVerificationEmailSuperseded) {
 			if failErr := s.repo.FailEmailJob(ctx, job.EmailJobID, err.Error()); failErr != nil {
@@ -207,9 +214,12 @@ func (s EmailService) processJobs(ctx context.Context) {
 		if err == nil {
 			if completeErr := s.repo.CompleteEmailJob(ctx, job.EmailJobID); completeErr != nil {
 				log.Printf("complete email job %s: %v", job.EmailJobID, completeErr)
+			} else {
+				log.Printf("email job sent id=%s type=%s attempt=%d", job.EmailJobID, job.JobType, job.Attempts)
 			}
 			continue
 		}
+		log.Printf("email job failed id=%s type=%s attempt=%d: %v", job.EmailJobID, job.JobType, job.Attempts, err)
 		if retryErr := s.repo.RetryEmailJob(ctx, job, err.Error()); retryErr != nil {
 			log.Printf("retry email job %s: %v", job.EmailJobID, retryErr)
 		}

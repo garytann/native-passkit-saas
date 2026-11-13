@@ -29,10 +29,8 @@ type Config struct {
 	GoogleWalletIssuerID    string
 	GoogleCredentialsPath   string
 	EmailEnabled            bool
-	EmailSMTPHost           string
-	EmailSMTPPort           string
-	EmailSMTPUsername       string
-	EmailSMTPPasswordFile   string
+	GmailAPIUser            string
+	GmailCredentialsPath    string
 	EmailFromName           string
 	EmailFromAddress        string
 	EmailReplyTo            string
@@ -65,10 +63,8 @@ func Load() Config {
 		GoogleWalletIssuerID:    env("GOOGLE_WALLET_ISSUER_ID", ""),
 		GoogleCredentialsPath:   env("GOOGLE_APPLICATION_CREDENTIALS", ""),
 		EmailEnabled:            envBool("EMAIL_ENABLED", false),
-		EmailSMTPHost:           env("EMAIL_SMTP_HOST", "smtp.gmail.com"),
-		EmailSMTPPort:           env("EMAIL_SMTP_PORT", "587"),
-		EmailSMTPUsername:       env("EMAIL_SMTP_USERNAME", ""),
-		EmailSMTPPasswordFile:   env("EMAIL_SMTP_PASSWORD_FILE", ""),
+		GmailAPIUser:            env("GMAIL_API_USER", ""),
+		GmailCredentialsPath:    env("GMAIL_API_CREDENTIALS_FILE", ""),
 		EmailFromName:           env("EMAIL_FROM_NAME", "Just Loyalty"),
 		EmailFromAddress:        env("EMAIL_FROM_ADDRESS", ""),
 		EmailReplyTo:            env("EMAIL_REPLY_TO", ""),
